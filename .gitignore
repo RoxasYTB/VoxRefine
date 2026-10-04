@@ -8,6 +8,11 @@ dist/
 corpus/
 results/
 *.wav
+*.WAV
+*.mp3
+*.MP3
+*.m4a
+*.M4A
 *.pcm
 *.so
 *.dylib

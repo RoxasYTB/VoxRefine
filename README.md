@@ -9,8 +9,11 @@ télécharge rien pendant le traitement.
 
 ## État du projet
 
-`0.1.0` est un prototype : **WAV PCM 16 bits, mono, 48 kHz uniquement**.
-Il conserve la durée exacte du fichier et n'écrase jamais un fichier existant.
+La version `0.2.0` accepte **WAV, MP3 et M4A**. FFmpeg convertit
+les entrées qui le nécessitent en WAV PCM 16 bits, mono, 48 kHz.
+La sortie reste dans ce format, sans écraser de fichier existant.
+Le nettoyage conserve la durée exacte de l'audio décodé ; les codecs compressés
+peuvent ajouter du padding selon leur encodage.
 Pas de normalisation automatique, de transcription ou d'interface graphique.
 
 Les deux moteurs ont été exécutés sur du silence et un signal synthétique.
@@ -33,7 +36,14 @@ python -m pip install .
 voxrefine --version
 ```
 
-Sur Debian/Ubuntu, `python3-venv` peut être nécessaire.
+Sur Debian/Ubuntu, `python3-venv` peut être nécessaire. Installer également
+FFmpeg pour les formats compressés et les WAV qui doivent être convertis :
+
+```sh
+sudo apt install ffmpeg
+```
+
+Un WAV mono PCM16 à 48 kHz fonctionne toujours sans FFmpeg.
 Sans installation du package, les mêmes commandes fonctionnent avec
 `python3 -m voxrefine` depuis le dépôt.
 
@@ -77,21 +87,19 @@ les [binaires amont](https://github.com/Rikorose/DeepFilterNet/releases/tag/v0.5
 ## Nettoyer un fichier
 
 ```sh
-python3 -m voxrefine clean corpus/voice.wav results/voice-df.wav \
+python3 -m voxrefine clean corpus/voice.m4a results/voice-df.wav \
   --engine deepfilter --deep-filter .tools/deep-filter
 
 python3 -m voxrefine clean corpus/voice.wav results/voice-rnnoise.wav \
   --engine rnnoise --rnnoise-library .tools/librnnoise.so
 ```
 
-Les fichiers doivent déjà être au format accepté. Si FFmpeg est installé,
-une conversion explicite est possible :
-
-```sh
-ffmpeg -i recording.m4a -ac 1 -ar 48000 -c:a pcm_s16le corpus/voice.wav
-```
-
-La conversion en mono mélange les canaux ; conserver l'original. Les moteurs
+La préparation est automatique et temporaire. Un message indique la conversion
+en mono : les canaux sont mélangés, pas nettoyés séparément. L'original reste
+inchangé. La première piste audio est utilisée si le fichier en contient plusieurs.
+Utiliser `--ffmpeg /chemin/ffmpeg` si le binaire n'est pas dans le PATH.
+Les erreurs de décodage sont signalées, sans produire de résultat de substitution.
+Les moteurs
 visent surtout la réduction de bruit : la réverbération forte, la saturation et
 les voix qui se chevauchent restent des cas difficiles.
 
@@ -100,6 +108,22 @@ charger tout le fichier en mémoire ; sa consommation mémoire n'est pas encore
 mesurée. VoxRefine ajoute une fin silencieuse puis retire le délai et l'excédent
 pour ne pas couper la fin de l'enregistrement. Aucun moteur n'est découpé en
 segments indépendants.
+
+### Régler le nettoyage DeepFilterNet
+
+```sh
+python3 -m voxrefine clean corpus/voice.wav results/voice-doux.wav \
+  --engine deepfilter --deep-filter .tools/deep-filter \
+  --attenuation-limit-db 12
+```
+
+`--attenuation-limit-db` expose le réglage natif de DeepFilterNet, entre 0 et
+100 dB. Essayer 12 dB pour un nettoyage doux ou 20 dB pour davantage de réduction.
+Une valeur plus basse conserve davantage du signal original, mais aussi du bruit.
+Ce n'est pas une garantie de préserver chaque son faible : écouter le résultat.
+0 désactive la réduction de bruit du moteur, sans garantir une copie bit à bit.
+100 correspond au traitement actuel sans limite d'atténuation ; c'est toujours
+la valeur par défaut. RNNoise ne propose pas ce réglage dans VoxRefine.
 
 ## Comparer les moteurs
 
@@ -115,12 +139,19 @@ python3 -m voxrefine benchmark examples/corpus.json \
   --rnnoise-library .tools/librnnoise.so
 ```
 
-Le répertoire de sortie doit être nouveau. Il contient les fichiers nettoyés
-et `report.json` : empreintes des entrées, sorties et moteurs, versions,
+Le répertoire de sortie doit être nouveau. Chaque entrée est préparée une seule
+fois pour tous les moteurs. Il contient les références `ID-input.wav`, les
+fichiers nettoyés et `report.json` : empreintes des entrées originales et
+préparées, sorties et moteurs, versions,
 durées, temps de traitement, facteur temps réel, niveau RMS, crête et nombre
 d'échantillons à pleine échelle. Un facteur temps réel inférieur à 1 signifie
 un traitement plus rapide que la durée de l'audio sur la machine utilisée.
-Le temps inclut l'initialisation et les entrées/sorties.
+Le temps inclut l'initialisation et les entrées/sorties, mais pas la conversion
+initiale. Les niveaux et durées d'entrée sont mesurés sur la référence préparée.
+L'option `--attenuation-limit-db` fonctionne aussi pour le benchmark : elle
+s'applique uniquement à DeepFilterNet et est enregistrée dans son identité
+dans le rapport. Pour comparer plusieurs valeurs, lancer des benchmarks dans
+des répertoires de sortie distincts. Une sélection RNNoise seule refuse l'option.
 
 Le rapport reste marqué `running` en cas d'interruption, `failed` lors d'une
 erreur de traitement et `complete` uniquement à la fin. Une erreur arrête la

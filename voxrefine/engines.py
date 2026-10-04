@@ -3,10 +3,10 @@
 from array import array
 import ctypes
 import hashlib
+import math
 import os
 from pathlib import Path
 import shutil
-import subprocess
 import tempfile
 import wave
 
@@ -17,6 +17,8 @@ from .audio import (
     encode_pcm,
     inspect_wav,
 )
+from .conversion import prepared_audio
+from .process import run_checked
 
 
 def file_hash(path: Path) -> str:
@@ -27,25 +29,13 @@ def file_hash(path: Path) -> str:
     return digest.hexdigest()
 
 
-def run_checked(command: list[str]) -> str:
-    try:
-        process = subprocess.run(
-            command, capture_output=True, text=True, check=False, timeout=1800
-        )
-    except subprocess.TimeoutExpired as error:
-        raise VoxRefineError("Engine exceeded the 30-minute timeout.") from error
-    if process.returncode:
-        detail = (process.stderr or process.stdout).strip()
-        raise VoxRefineError(
-            f"Engine exited with code {process.returncode}: {detail}"
-        )
-    return process.stdout.strip()
-
-
 class DeepFilterNet:
     name = "deepfilter"
 
-    def __init__(self, executable: str):
+    def __init__(self, executable: str, attenuation_limit_db: float = 100.0):
+        if not math.isfinite(attenuation_limit_db) or not 0 <= attenuation_limit_db <= 100:
+            raise VoxRefineError("Attenuation limit must be a finite number between 0 and 100 dB.")
+        self.attenuation_limit_db = attenuation_limit_db
         resolved = shutil.which(executable)
         if resolved is None:
             raise VoxRefineError(
@@ -66,6 +56,7 @@ class DeepFilterNet:
             "version": self.version,
             "binary_sha256": file_hash(self.executable),
             "model": "upstream binary's built-in model",
+            "attenuation_limit_db": str(self.attenuation_limit_db),
         }
 
     def process(self, source: Path, target: Path) -> None:
@@ -84,7 +75,9 @@ class DeepFilterNet:
                     writer.writeframesraw(b"\0\0" * padding)
             output_directory = temporary / "out"
             run_checked([
-                str(self.executable), "-D", "-o", str(output_directory), str(padded)
+                str(self.executable), "-D",
+                "--atten-lim-db", str(self.attenuation_limit_db),
+                "-o", str(output_directory), str(padded)
             ])
             enhanced = output_directory / "input.wav"
             output_info = inspect_wav(enhanced)
@@ -177,21 +170,24 @@ class RNNoise:
 Engine = DeepFilterNet | RNNoise
 
 
-def clean(source: Path, target: Path, engine: Engine) -> None:
+def clean(
+    source: Path, target: Path, engine: Engine, ffmpeg: str = "ffmpeg"
+) -> None:
     source = source.expanduser().resolve()
     target = target.expanduser().resolve()
-    inspect_wav(source)
+    if target.suffix.lower() != ".wav":
+        raise VoxRefineError("Output must have a .wav extension (mono PCM16 at 48000 Hz).")
     if target.exists():
         raise VoxRefineError(
             f"Output already exists: {target}. Choose a new path; files are never overwritten."
         )
     target.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(
+    with prepared_audio(source, ffmpeg) as prepared, tempfile.TemporaryDirectory(
         prefix=".voxrefine-", dir=target.parent
     ) as directory:
         temporary = Path(directory) / "cleaned.wav"
-        engine.process(source, temporary)
-        if inspect_wav(temporary).frames != inspect_wav(source).frames:
+        engine.process(prepared, temporary)
+        if inspect_wav(temporary).frames != inspect_wav(prepared).frames:
             raise VoxRefineError("Engine changed the audio duration.")
         # Publish atomically without replacing a file that appeared mid-run.
         os.link(temporary, target)

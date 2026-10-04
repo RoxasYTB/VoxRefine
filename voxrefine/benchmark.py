@@ -3,10 +3,12 @@
 import json
 from pathlib import Path
 import platform
+import shutil
 import time
 
 from . import __version__
-from .audio import VoxRefineError, inspect_wav, measure_wav
+from .audio import VoxRefineError, measure_wav
+from .conversion import prepared_audio
 from .engines import Engine, clean, file_hash
 
 
@@ -38,12 +40,15 @@ def read_corpus(manifest: Path) -> list[tuple[str, Path, str, str]]:
             raise VoxRefineError(f"Duplicate sample id: {identifier}")
         identifiers.add(identifier)
         path = (manifest.parent / sample["path"]).expanduser().resolve()
-        inspect_wav(path)
+        if not path.is_file():
+            raise VoxRefineError(f"Audio file not found: {path}")
         records.append((identifier, path, sample["category"], sample["rights"]))
     return records
 
 
-def benchmark(manifest: Path, output: Path, engines: list[Engine]) -> Path:
+def benchmark(
+    manifest: Path, output: Path, engines: list[Engine], ffmpeg: str = "ffmpeg"
+) -> Path:
     if not engines or len({engine.name for engine in engines}) != len(engines):
         raise VoxRefineError("Select at least one engine, without duplicates.")
     samples = read_corpus(manifest)
@@ -59,7 +64,8 @@ def benchmark(manifest: Path, output: Path, engines: list[Engine]) -> Path:
         "manifest_sha256": file_hash(manifest),
         "engines": identities,
         "measurement_scope": (
-            "Wall time includes initialization and file I/O. RMS is not LUFS. "
+            "Wall time includes initialization and file I/O, excluding input conversion. "
+            "Input metrics describe the prepared mono PCM16 48000 Hz audio. RMS is not LUFS. "
             "No perceptual score, memory measurement or quality ranking is inferred."
         ),
         "samples": [],
@@ -76,12 +82,23 @@ def benchmark(manifest: Path, output: Path, engines: list[Engine]) -> Path:
 
     save()
     for identifier, source, category, rights in samples:
-        original = measure_wav(source)
+        prepared_path = output / f"{identifier}-input.wav"
+        try:
+            with prepared_audio(source, ffmpeg) as prepared:
+                shutil.copyfile(prepared, prepared_path)
+            original = measure_wav(prepared_path)
+        except (VoxRefineError, OSError) as error:
+            report["status"] = "failed"
+            report["error"] = f"{identifier}/input: {error}"
+            save()
+            raise
         entry = {
             "id": identifier,
             "category": category,
             "rights": rights,
             "input_sha256": file_hash(source),
+            "prepared_input_path": prepared_path.name,
+            "prepared_input_sha256": file_hash(prepared_path),
             "input": original,
             "outputs": [],
         }
@@ -90,7 +107,7 @@ def benchmark(manifest: Path, output: Path, engines: list[Engine]) -> Path:
             target = output / f"{identifier}-{engine.name}.wav"
             started = time.perf_counter()
             try:
-                clean(source, target, engine)
+                clean(prepared_path, target, engine)
                 elapsed = time.perf_counter() - started
                 measurements = measure_wav(target)
                 checksum = file_hash(target)
