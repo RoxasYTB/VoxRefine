@@ -1,0 +1,16 @@
+{
+  "samples": [
+    {
+      "id": "voice-fan",
+      "path": "../corpus/voice-fan.wav",
+      "category": "speech-with-fan",
+      "rights": "REPLACE with the recording's source and your permission to use it"
+    },
+    {
+      "id": "voice-clean",
+      "path": "../corpus/voice-clean.wav",
+      "category": "already-clean-speech",
+      "rights": "REPLACE with the recording's source and your permission to use it"
+    }
+  ]
+}

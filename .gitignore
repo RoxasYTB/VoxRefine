@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.tools/
+build/
+dist/
+corpus/
+results/
+*.wav
+*.pcm
+*.so
+*.dylib
+*.dll
