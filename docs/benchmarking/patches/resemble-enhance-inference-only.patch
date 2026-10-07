@@ -1,0 +1,65 @@
+diff --git a/resemble_enhance/denoiser/inference.py b/resemble_enhance/denoiser/inference.py
+index 78a33b2..0533fc1 100644
+--- a/resemble_enhance/denoiser/inference.py
++++ b/resemble_enhance/denoiser/inference.py
+@@ -7 +7,2 @@ from ..inference import inference
+-from .train import Denoiser, HParams
++from .denoiser import Denoiser
++from .hparams import HParams
+diff --git a/resemble_enhance/enhancer/download.py b/resemble_enhance/enhancer/download.py
+index 614b9a4..0491223 100644
+--- a/resemble_enhance/enhancer/download.py
++++ b/resemble_enhance/enhancer/download.py
+@@ -6,0 +7 @@ RUN_NAME = "enhancer_stage2"
++MODEL_REVISION = "e10d34b312433b41a8eeeec43ebb6fa3219dab3f"
+@@ -12 +13 @@ def get_source_url(relpath):
+-    return f"https://huggingface.co/ResembleAI/resemble-enhance/resolve/main/{RUN_NAME}/{relpath}?download=true"
++    return f"https://huggingface.co/ResembleAI/resemble-enhance/resolve/{MODEL_REVISION}/{RUN_NAME}/{relpath}?download=true"
+diff --git a/resemble_enhance/enhancer/enhancer.py b/resemble_enhance/enhancer/enhancer.py
+index 7fef9eb..655656a 100644
+--- a/resemble_enhance/enhancer/enhancer.py
++++ b/resemble_enhance/enhancer/enhancer.py
+@@ -13 +13,7 @@ from ..utils.distributed import global_leader_only
+-from ..utils.train_loop import TrainLoop
++try:
++    from ..utils.train_loop import TrainLoop
++except ImportError:  # Training loop is not needed by inference.
++    class TrainLoop:
++        @staticmethod
++        def get_running_loop():
++            return None
+diff --git a/resemble_enhance/enhancer/inference.py b/resemble_enhance/enhancer/inference.py
+index c8f59d4..fa6dcf5 100644
+--- a/resemble_enhance/enhancer/inference.py
++++ b/resemble_enhance/enhancer/inference.py
+@@ -9 +9,2 @@ from .download import download
+-from .train import Enhancer, HParams
++from .enhancer import Enhancer
++from .hparams import HParams
+diff --git a/resemble_enhance/utils/__init__.py b/resemble_enhance/utils/__init__.py
+index f65d6a7..78fd71c 100644
+--- a/resemble_enhance/utils/__init__.py
++++ b/resemble_enhance/utils/__init__.py
+@@ -2 +1,0 @@ from .distributed import global_leader_only
+-from .engine import Engine, gather_attribute
+@@ -4 +2,0 @@ from .logging import setup_logging
+-from .train_loop import TrainLoop, is_global_leader
+diff --git a/resemble_enhance/utils/distributed.py b/resemble_enhance/utils/distributed.py
+index f0b82c0..41c48e4 100644
+--- a/resemble_enhance/utils/distributed.py
++++ b/resemble_enhance/utils/distributed.py
+@@ -6 +5,0 @@ from typing import Callable
+-import deepspeed
+@@ -8 +6,0 @@ import torch
+-from deepspeed.accelerator import get_accelerator
+@@ -10,0 +9,7 @@ from torch.distributed import broadcast_object_list
++try:
++    import deepspeed
++    from deepspeed.accelerator import get_accelerator
++except ImportError:  # DeepSpeed is only needed by the training/distributed path.
++    deepspeed = None
++    get_accelerator = None
++
+@@ -33,0 +39,2 @@ def init_distributed():
++    if deepspeed is None:
++        raise RuntimeError("DeepSpeed is required for distributed inference/training")
