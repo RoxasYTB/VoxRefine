@@ -61,11 +61,23 @@ class CoreTests(unittest.TestCase):
 
     def test_wav_validation(self):
         self.assertEqual(inspect_wav(self.source).frames, 481)
-        for rate, channels in [(44100, 1), (48000, 2)]:
+        for rate, channels in [(44100, 1)]:
             with self.subTest(rate=rate, channels=channels):
                 write_wav(self.source, rate=rate, channels=channels)
                 with self.assertRaisesRegex(VoxRefineError, "48000 Hz"):
                     inspect_wav(self.source)
+        write_wav(self.source, channels=2, samples=[100, -100] * 481)
+        self.assertEqual(inspect_wav(self.source).channels, 2)
+        self.assertEqual(measure_wav(self.source)["channels"], 2)
+
+    def test_clean_preserves_stereo_channels(self):
+        samples = [value for _ in range(481) for value in (1200, -700)]
+        write_wav(self.source, samples=samples, channels=2)
+        target = self.root / "stereo-output.wav"
+        clean(self.source, target, CopyEngine())
+        self.assertEqual(inspect_wav(target).channels, 2)
+        with wave.open(str(target), "rb") as reader:
+            self.assertEqual(reader.readframes(481), encode_pcm(array("h", samples)))
 
     def test_empty_and_invalid_audio(self):
         write_wav(self.source, [])
@@ -80,6 +92,14 @@ class CoreTests(unittest.TestCase):
         self.source.write_bytes(data[:-2])
         with self.assertRaisesRegex(VoxRefineError, "truncated"):
             inspect_wav(self.source)
+        with self.assertRaisesRegex(VoxRefineError, "truncated"):
+            measure_wav(self.source)
+
+    def test_measurements_read_the_file_once(self):
+        with patch("voxrefine.audio.wave.open", wraps=wave.open) as opener:
+            metrics = measure_wav(self.source)
+        self.assertEqual(opener.call_count, 1)
+        self.assertEqual(metrics["frames"], 481)
 
     def test_silence_is_json_safe(self):
         write_wav(self.source, [0] * 480)
@@ -183,19 +203,42 @@ class CoreTests(unittest.TestCase):
         with redirect_stderr(stderr):
             code = main([
                 "clean", str(self.source), str(self.root / "out.wav"),
-                "--engine", "rnnoise",
+                "--engine", "rnnoise", "--rnnoise-library", "missing.so",
             ])
         self.assertEqual(code, 1)
-        self.assertIn("--rnnoise-library", stderr.getvalue())
+        self.assertIn("RNNoise library not found", stderr.getvalue())
 
-    def test_cli_clean(self):
-        with patch("voxrefine.cli.DeepFilterNet", return_value=CopyEngine()):
+    def test_cli_defaults_to_protected_deepfilter(self):
+        with patch("voxrefine.cli.DeepFilterNet", return_value=CopyEngine()), \
+             patch("voxrefine.cli.RNNoise", return_value=CopyEngine()), \
+             patch("voxrefine.cli.ProtectedDeepFilterNet", return_value=CopyEngine()) as protected:
             with redirect_stdout(io.StringIO()):
                 code = main([
                     "clean", str(self.source), str(self.root / "out.wav"),
-                    "--engine", "deepfilter",
                 ])
         self.assertEqual(code, 0)
+        protected.assert_called_once()
+
+    def test_cli_can_request_standard_deepfilter_without_detector(self):
+        with patch("voxrefine.cli.DeepFilterNet", return_value=CopyEngine()) as engine:
+            with redirect_stdout(io.StringIO()):
+                code = main([
+                    "clean", str(self.source), str(self.root / "out.wav"),
+                    "--no-protect-voice",
+                ])
+        self.assertEqual(code, 0)
+        engine.assert_called_once_with(".tools/deep-filter", attenuation_limit_db=100.0)
+
+    def test_cli_default_engine_paths(self):
+        with patch("voxrefine.cli.DeepFilterNet", return_value=CopyEngine()) as primary, \
+             patch("voxrefine.cli.RNNoise", return_value=CopyEngine()) as detector, \
+             patch("voxrefine.cli.ProtectedDeepFilterNet", return_value=CopyEngine()):
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(main([
+                    "clean", str(self.source), str(self.root / "out.wav"),
+                ]), 0)
+        primary.assert_called_once_with(".tools/deep-filter", attenuation_limit_db=100.0)
+        detector.assert_called_once_with(".tools/librnnoise.so")
 
     def test_missing_native_engines(self):
         with self.assertRaises(VoxRefineError):
@@ -213,19 +256,22 @@ class CoreTests(unittest.TestCase):
                 with patch("voxrefine.engines.shutil.which", return_value=str(self.source)):
                     with patch("voxrefine.engines.run_checked", return_value="deep_filter 0.5.6"):
                         engine = DeepFilterNet("mock", attenuation_limit_db=limit)
-                self.assertEqual(engine.identity()["attenuation_limit_db"], str(limit))
+                self.assertEqual(engine.identity()["attenuation_limit_db"], limit)
 
     def test_cli_passes_attenuation_limit(self):
-        for flag, expected in (([], 100.0), (["--attenuation-limit-db", "12"], 12.0)):
+        for flag, expected in (
+            (["--no-protect-voice"], 100.0),
+            (["--no-protect-voice", "--attenuation-limit-db", "12"], 12.0),
+        ):
             with self.subTest(expected=expected):
                 target = self.root / f"out-{expected}.wav"
                 with patch("voxrefine.cli.DeepFilterNet", return_value=CopyEngine()) as factory:
                     with redirect_stdout(io.StringIO()):
                         self.assertEqual(main([
                             "clean", str(self.source), str(target),
-                            "--engine", "deepfilter", *flag,
+                            *flag,
                         ]), 0)
-                    factory.assert_called_once_with("deep-filter", attenuation_limit_db=expected)
+                    factory.assert_called_once_with(".tools/deep-filter", attenuation_limit_db=expected)
 
     def test_cli_rejects_limit_for_rnnoise_only(self):
         for command in (
@@ -239,14 +285,63 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(error.exception.code, 2)
 
     def test_cli_benchmark_passes_limit(self):
-        with patch("voxrefine.cli.DeepFilterNet", return_value=CopyEngine()) as factory:
+        with patch("voxrefine.cli.DeepFilterNet", return_value=CopyEngine()) as factory, \
+             patch("voxrefine.cli.RNNoise", return_value=CopyEngine()), \
+             patch("voxrefine.cli.ProtectedDeepFilterNet", return_value=CopyEngine()):
             with redirect_stdout(io.StringIO()):
                 code = main([
                     "benchmark", str(self.manifest()), "--output", str(self.root / "results"),
-                    "--engines", "deepfilter", "--attenuation-limit-db", "20",
+                    "--engines", "deepfilter", "--rnnoise-library", "mock-rnnoise",
+                    "--attenuation-limit-db", "20",
                 ])
         self.assertEqual(code, 0)
-        factory.assert_called_once_with("deep-filter", attenuation_limit_db=20.0)
+        factory.assert_called_once_with(".tools/deep-filter", attenuation_limit_db=20.0)
+
+    def test_cli_profiles_for_clean_and_benchmark(self):
+        for profile, expected in (("balanced", 20.0), ("strong", 100.0)):
+            for command in ("clean", "benchmark"):
+                with self.subTest(profile=profile, command=command):
+                    target = self.root / f"{command}-{profile}"
+                    arguments = (
+                        ["clean", str(self.source), str(target.with_suffix(".wav")),
+                             "--rnnoise-library", "mock-rnnoise"]
+                        if command == "clean"
+                        else ["benchmark", str(self.manifest()), "--output", str(target),
+                                  "--engines", "deepfilter", "--rnnoise-library", "mock-rnnoise"]
+                    )
+                    with patch("voxrefine.cli.DeepFilterNet", return_value=CopyEngine()) as factory, \
+                         patch("voxrefine.cli.RNNoise", return_value=CopyEngine()), \
+                         patch("voxrefine.cli.ProtectedDeepFilterNet", return_value=CopyEngine()):
+                        with redirect_stdout(io.StringIO()):
+                            self.assertEqual(main([*arguments, "--profile", profile]), 0)
+                        factory.assert_called_once_with(
+                            ".tools/deep-filter", attenuation_limit_db=expected
+                        )
+
+    def test_cli_natural_profile_requires_standard_mode(self):
+        with redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as error:
+                main([
+                        "clean", str(self.source), str(self.root / "out.wav"),
+                        "--profile", "natural",
+                ])
+        self.assertEqual(error.exception.code, 2)
+
+    def test_cli_profiles_cannot_be_ignored_or_combined_with_limit(self):
+        cases = (
+            ["--engine", "rnnoise", "--profile", "natural"],
+            ["--engine", "deepfilter", "--profile", "natural",
+             "--attenuation-limit-db", "20"],
+            ["--engine", "deepfilter", "--profile", "invalid"],
+        )
+        for options in cases:
+            with self.subTest(options=options), redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as error:
+                    main([
+                        "clean", str(self.source), str(self.root / "out.wav"),
+                        "--rnnoise-library", "mock-rnnoise", *options,
+                    ])
+                self.assertEqual(error.exception.code, 2)
 
     def test_rnnoise_invalid_library_is_explicit(self):
         with self.assertRaisesRegex(VoxRefineError, "Cannot load RNNoise"):
@@ -283,7 +378,7 @@ class NativeTests(unittest.TestCase):
                 )
                 report = benchmark(manifest, root / f"results-{limit}", [engine])
                 data = json.loads(report.read_text())
-                self.assertEqual(data["engines"][0]["attenuation_limit_db"], str(limit))
+                self.assertEqual(data["engines"][0]["attenuation_limit_db"], limit)
                 target = report.parent / data["samples"][0]["outputs"][0]["path"]
                 self.assertEqual(inspect_wav(target).frames, 48013)
                 outputs.append(target.read_bytes())

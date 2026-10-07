@@ -1,4 +1,5 @@
 from contextlib import redirect_stderr
+from array import array
 import io
 import json
 import math
@@ -8,12 +9,16 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import wave
 
 from tests.test_voxrefine import CopyEngine, write_wav
-from voxrefine.audio import VoxRefineError, inspect_wav, measure_wav
+from voxrefine.audio import (
+    VoxRefineError, configure_wav, encode_pcm, inspect_wav, measure_wav,
+)
 from voxrefine.benchmark import benchmark
 from voxrefine.conversion import prepared_audio
 from voxrefine.engines import DeepFilterNet, RNNoise, clean, file_hash
+from voxrefine.protection import ProtectedDeepFilterNet
 
 
 class ConversionTests(unittest.TestCase):
@@ -89,6 +94,7 @@ class FFmpegTests(unittest.TestCase):
                     with prepared_audio(source) as prepared:
                         info = inspect_wav(prepared)
                         self.assertEqual(info.sample_rate, 48000)
+                        self.assertEqual(info.channels, 2)
                         self.assertAlmostEqual(info.seconds, 1.0, delta=0.1)
                         self.assertIsNotNone(measure_wav(prepared)["rms_dbfs"])
                     self.assertFalse(prepared.exists())
@@ -96,7 +102,7 @@ class FFmpegTests(unittest.TestCase):
                     clean(source, target, CopyEngine())
                 self.assertEqual(inspect_wav(target).frames, info.frames)
                 self.assertEqual(file_hash(source), before)
-                self.assertIn("mono PCM16", stderr.getvalue())
+                self.assertIn("stereo PCM16", stderr.getvalue())
 
     def test_invalid_audio_has_no_output(self):
         source = self.root / "broken.mp3"
@@ -126,6 +132,8 @@ class FFmpegTests(unittest.TestCase):
         self.assertEqual(
             sample["input"]["frames"], sample["outputs"][0]["audio"]["frames"]
         )
+        self.assertEqual(sample["input"]["channels"], 2)
+        self.assertEqual(sample["outputs"][0]["audio"]["channels"], 2)
 
     def test_bad_conversion_marks_benchmark_failed(self):
         source = self.root / "broken.m4a"
@@ -160,3 +168,32 @@ class FFmpegTests(unittest.TestCase):
                     target = self.root / f"{engine.name}.wav"
                     clean(source, target, engine)
                     self.assertEqual(inspect_wav(target).frames, expected)
+
+    @unittest.skipUnless(
+        os.environ.get("VOXREFINE_DEEP_FILTER") and os.environ.get("VOXREFINE_RNNOISE"),
+        "Native engines are required.",
+    )
+    def test_stereo_through_protected_deepfilter(self):
+        mono_samples = [
+            round(4000 * math.sin(2 * math.pi * 220 * index / 48000))
+            for index in range(4800)
+        ]
+        stereo = self.root / "stereo.wav"
+        with wave.open(str(stereo), "wb") as writer:
+            configure_wav(writer, channels=2)
+            samples = array("h", (
+                sample for value in mono_samples for sample in (value, round(value * 0.7))
+            ))
+            writer.writeframes(encode_pcm(samples))
+        output = self.root / "stereo-clean.wav"
+        engine = DeepFilterNet(os.environ["VOXREFINE_DEEP_FILTER"])
+        protected = ProtectedDeepFilterNet(
+            engine, RNNoise(os.environ["VOXREFINE_RNNOISE"])
+        )
+        clean(stereo, output, protected)
+        result = inspect_wav(output)
+        self.assertEqual(result.channels, 2)
+        self.assertEqual(result.frames, len(mono_samples))
+        with wave.open(str(output), "rb") as reader:
+            interleaved = array("h", reader.readframes(reader.getnframes()))
+        self.assertNotEqual(interleaved[0::2], interleaved[1::2])

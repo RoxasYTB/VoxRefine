@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.0 — en développement
+
+- Sortie DeepFilterNet protégée par défaut ; `--no-protect-voice` permet d'obtenir
+  le rendu standard.
+- Commande de nettoyage simplifiée avec DeepFilterNet comme moteur par défaut.
+- Profils DeepFilterNet `natural`, `balanced` et `strong`.
+- Égalisation facultative des basses et des aigus, réglable de -12 à +12 dB.
+- Préservation des canaux stéréo avec traitement mono séparé par canal.
+- Validation et mesure des niveaux en une seule lecture pour `measure_wav`.
+- Constantes PCM partagées et interface de moteur typée.
+- Limite d'atténuation enregistrée comme nombre JSON dans les rapports.
+
 ## 0.2.0
 
 - Conversion locale automatique des WAV, MP3 et M4A avec FFmpeg.

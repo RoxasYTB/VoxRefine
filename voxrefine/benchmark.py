@@ -65,7 +65,8 @@ def benchmark(
         "engines": identities,
         "measurement_scope": (
             "Wall time includes initialization and file I/O, excluding input conversion. "
-            "Input metrics describe the prepared mono PCM16 48000 Hz audio. RMS is not LUFS. "
+            "Input metrics describe prepared mono/stereo PCM16 48000 Hz audio. "
+            "RMS is not LUFS. "
             "No perceptual score, memory measurement or quality ranking is inferred."
         ),
         "samples": [],
