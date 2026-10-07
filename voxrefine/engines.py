@@ -11,6 +11,7 @@ import tempfile
 import wave
 
 from .audio import (
+    AudioDomain,
     VoxRefineError,
     configure_wav,
     decode_pcm,
@@ -18,6 +19,7 @@ from .audio import (
     inspect_wav,
 )
 from .conversion import prepared_audio
+from .backends.base import BackendSpec
 from .process import run_checked
 
 
@@ -58,6 +60,11 @@ class DeepFilterNet:
             "model": "upstream binary's built-in model",
             "attenuation_limit_db": str(self.attenuation_limit_db),
         }
+
+    def spec(self) -> BackendSpec:
+        domain = AudioDomain(48000, 1, "s16")
+        return BackendSpec(self.name, "DeepFilterNet", self.version, "file", domain, domain,
+                           None, True, False, False, False)
 
     def process(self, source: Path, target: Path) -> None:
         info = inspect_wav(source)
@@ -130,6 +137,11 @@ class RNNoise:
             "binary_sha256": file_hash(self.library),
             "model": "library's built-in model",
         }
+
+    def spec(self) -> BackendSpec:
+        domain = AudioDomain(48000, 1, "s16", frame_samples=self.frame_size)
+        return BackendSpec(self.name, "RNNoise", "v0.1", "stream", domain, domain,
+                           None, True, False, False, False)
 
     def process(self, source: Path, target: Path) -> None:
         info = inspect_wav(source)

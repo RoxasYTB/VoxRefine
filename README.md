@@ -103,6 +103,59 @@ Les moteurs
 visent surtout la réduction de bruit : la réverbération forte, la saturation et
 les voix qui se chevauchent restent des cas difficiles.
 
+### Essayer GTCRN (CPU, expérimental)
+
+GTCRN nécessite les extras `numpy` et ONNX Runtime ainsi qu'un modèle ONNX
+streaming GTCRN fourni localement. VoxRefine ne télécharge aucun poids :
+
+```sh
+python3 -m pip install '.[gtcrn]'
+python3 -m voxrefine clean corpus/voice.wav results/voice-gtcrn.wav \
+  --engine gtcrn --model /chemin/vers/gtcrn_simple.onnx
+```
+
+Le modèle traite du mono 16 kHz float32. Un fichier stéréo est refusé; pour
+autoriser son downmix, ajouter `--channel-policy downmix`. Par défaut, le WAV
+reprend la fréquence source (`--output-rate source`); `--output-rate 16000`
+garde le taux du modèle. L'inférence utilise exclusivement `CPUExecutionProvider`,
+avec une session et des caches par fichier. Le frontend streaming utilise FFT
+512, hop 256 et sqrt-Hann comme l'exemple officiel. La parité sur la fixture
+upstream et les seuils de régression sont documentés dans
+`docs/benchmarking/gtcrn-upstream-validation.md`. La sortie garde
+une bande utile d'environ 8 kHz même si le fichier final est rééchantillonné à
+44,1 ou 48 kHz. Ce backend n'ajoute pas encore de séparation ni de curseurs
+voix/musique/bruit.
+
+Pour créer un rapport technique GTCRN indépendant des anciens rapports :
+
+```sh
+python3 -m pip install '.[gtcrn,bench]'
+python3 -m voxrefine benchmark examples/corpus.json \
+  --output results/gtcrn-benchmark-01 --engines gtcrn \
+  --model /chemin/vers/gtcrn_simple.onnx --output-rate source
+```
+
+Ce rapport versionné inclut hash du modèle, runtime/provider CPU, p50/p95/p99
+par frame, RTF, RSS et CPU quand `psutil` est disponible. Les résultats sont
+techniques; ils ne prédisent pas la préférence d’écoute ni la latence complète
+d’un futur chemin microphone.
+
+### Préparer une écoute à l’aveugle
+
+Une fois les candidats générés, décris-les dans un manifeste JSON avec un id,
+un nom de moteur et un chemin relatif pour chaque sortie, puis lance :
+
+```sh
+python3 -m voxrefine blind-listen results/experiment/candidates.json \
+  --output results/experiment/listening-01 --seed 17
+```
+
+Les copies d’écoute sont randomisées, recadrées à la durée commune par clip,
+normalisées à -20 LUFS / -1,5 dBTP, en mono 48 kHz PCM 24 bits. Les fichiers
+bruts ne sont pas modifiés. Écoute uniquement le dossier `blind/`; garde
+`key/reveal.json` séparé jusqu’à ce que tu aies noté tes préférences. Détails et
+format du manifeste : `docs/benchmarking/blind-listening.md`.
+
 RNNoise traite des blocs de 10 ms. DeepFilterNet utilise son CLI native, qui peut
 charger tout le fichier en mémoire ; sa consommation mémoire n'est pas encore
 mesurée. VoxRefine ajoute une fin silencieuse puis retire le délai et l'excédent

@@ -11,6 +11,10 @@ requires-python = ">=3.10"
 license = {text = "MIT"}
 dependencies = []
 
+[project.optional-dependencies]
+gtcrn = ["numpy>=1.24", "onnxruntime>=1.17"]
+bench = ["psutil>=5.9"]
+
 [project.scripts]
 voxrefine = "voxrefine.cli:main"
 
