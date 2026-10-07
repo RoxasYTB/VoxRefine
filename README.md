@@ -25,8 +25,11 @@ Le projet ne revendique pas une qualité équivalente à Adobe Podcast.
 
 Le pipeline expérimental **Studio** ajoute AP-BWE (restauration de bande
 passante 16 → 48 kHz) avant DeepFilterNet 0.5.6. Il fonctionne hors ligne et
-ne revendique ni traitement micro temps réel ni dé-réverbération dédiée. Sa
-première validation porte sur trois extraits d'un seul narrateur.
+ne revendique ni traitement micro temps réel ni dé-réverbération dédiée. Un
+batch contrôlé sur 11 lecteurs de quatre œuvres montre que DeepFilterNet seul
+préserve mieux la référence vocale connue dans les conditions testées; AP-BWE
+reste donc une étape optionnelle de restauration, pas un traitement universel.
+Protocole, limites et résultats : `docs/benchmarking/controlled-noise-v1.md`.
 
 ## Installation
 
