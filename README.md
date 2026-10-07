@@ -23,6 +23,11 @@ remplace pas une comparaison à l'écoute sur un corpus varié. Le choix du mote
 reste ouvert jusqu'à cette évaluation.
 Le projet ne revendique pas une qualité équivalente à Adobe Podcast.
 
+Le pipeline expérimental **Studio** ajoute AP-BWE (restauration de bande
+passante 16 → 48 kHz) avant DeepFilterNet 0.5.6. Il fonctionne hors ligne et
+ne revendique ni traitement micro temps réel ni dé-réverbération dédiée. Sa
+première validation porte sur trois extraits d'un seul narrateur.
+
 ## Installation
 
 Python 3.10 ou plus récent. Le code Python n'a pas de dépendance d'exécution.
@@ -177,6 +182,55 @@ Ce n'est pas une garantie de préserver chaque son faible : écouter le résulta
 0 désactive la réduction de bruit du moteur, sans garantir une copie bit à bit.
 100 correspond au traitement actuel sans limite d'atténuation ; c'est toujours
 la valeur par défaut. RNNoise ne propose pas ce réglage dans VoxRefine.
+
+### Pipeline Studio AP-BWE → DeepFilterNet (expérimental)
+
+AP-BWE et ses poids ne sont pas téléchargés par VoxRefine. Préparer un
+environnement Python isolé avec PyTorch et Torchaudio **de versions et de
+builds compatibles** (CPU ou CUDA selon la machine), puis récupérer le dépôt
+amont à la révision évaluée et le checkpoint 16 → 48 kHz depuis une source
+autorisée. Les empreintes attendues par ce prototype sont consignées dans le
+rapport; le checkpoint fait environ 119 MB. Le code et la licence des poids
+amont sont MIT. Garder le checkout et les poids hors du dépôt VoxRefine.
+
+```sh
+git clone https://github.com/yxlu-0102/AP-BWE.git .tools/ap-bwe-src
+git -C .tools/ap-bwe-src checkout 751710f22404c27e5bcc983248f8b856a04b8422
+python3 -m pip install .
+python3 -m voxrefine studio input.wav results/studio.wav \
+  --ap-bwe-source .tools/ap-bwe-src \
+  --checkpoint .tools/ap-bwe/g_01000000.pt \
+  --deep-filter .tools/deepfilternet/deep-filter \
+  --device cpu --threads 4 --channel-policy reject \
+  --report results/studio-report.json
+```
+
+Pour plusieurs sources, utiliser un manifeste au format de `examples/corpus.json`
+et un nouveau dossier de sortie :
+
+```sh
+python3 -m voxrefine studio-batch examples/corpus.json \
+  --output results/studio-batch-01 \
+  --ap-bwe-source .tools/ap-bwe-src \
+  --checkpoint .tools/ap-bwe/g_01000000.pt \
+  --deep-filter .tools/deepfilternet/deep-filter \
+  --device cpu --threads 4 --channel-policy reject
+```
+
+Le batch charge les deux moteurs une fois, écrit `audio/` et un `report.json`
+avec les hashes des entrées/poids, versions, durée, temps par étape et facteur
+temps réel (RTF < 1 signifie plus rapide que la durée du fichier). `reject`
+refuse les entrées stéréo; `downmix` mélange les canaux et `first` conserve le
+canal gauche. Ces options sont explicites, car elles sonnent différemment.
+`--chunk-frames` limite les activations AP-BWE; le signal STFT complet reste en
+mémoire. Le prototype est hors ligne, pas un flux causal. Vérifier le RTF, la
+RAM/VRAM et les rendus avant d'envisager un usage temps réel, en particulier
+sur une GTX 10xx.
+
+Les commandes exigent le code source et le checkpoint présents localement;
+elles n'installent pas les dépendances PyTorch à la volée et ne récupèrent pas
+de poids. Installer PyTorch/Torchaudio ensemble selon le backend choisi. Aucun
+score technique contre Adobe n'est calculé par ce runner.
 
 ## Comparer les moteurs
 

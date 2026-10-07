@@ -1,4 +1,5 @@
 import argparse
+import json
 from pathlib import Path
 import sys
 
@@ -8,6 +9,7 @@ from .benchmark import benchmark, benchmark_gtcrn
 from .engines import DeepFilterNet, Engine, RNNoise, clean
 from .gtcrn import GTCRN
 from .listening import create_blind_listening_set
+from .studio import benchmark_studio, enhance_studio, write_report
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -27,7 +29,33 @@ def main(argv: list[str] | None = None) -> int:
         "--engines", nargs="+", choices=["deepfilter", "rnnoise", "gtcrn"],
         default=["deepfilter", "rnnoise"],
     )
-    for command in (cleanup, comparison):
+    studio = commands.add_parser(
+        "studio", help="Run the reproducible offline AP-BWE -> DeepFilterNet chain."
+    )
+    studio.add_argument("input", type=Path)
+    studio.add_argument("output", type=Path)
+    studio.add_argument("--ap-bwe-source", type=Path, required=True,
+                         help="Local AP-BWE checkout at the documented pinned commit; never downloaded.")
+    studio.add_argument("--checkpoint", type=Path, required=True,
+                         help="Local AP-BWE 16k->48k generator checkpoint; never downloaded.")
+    studio.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
+    studio.add_argument("--threads", type=int, default=4)
+    studio.add_argument("--chunk-frames", type=int, default=2048,
+                        help="AP-BWE STFT frames per inference chunk; limits activation memory.")
+    studio.add_argument("--channel-policy", choices=["reject", "downmix", "first"], default="reject")
+    studio.add_argument("--report", type=Path, help="Optional new path for the JSON provenance report.")
+    studio_batch = commands.add_parser(
+        "studio-batch", help="Run the reproducible AP-BWE -> DeepFilterNet chain on a corpus."
+    )
+    studio_batch.add_argument("manifest", type=Path)
+    studio_batch.add_argument("--output", type=Path, required=True)
+    studio_batch.add_argument("--ap-bwe-source", type=Path, required=True)
+    studio_batch.add_argument("--checkpoint", type=Path, required=True)
+    studio_batch.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
+    studio_batch.add_argument("--threads", type=int, default=4)
+    studio_batch.add_argument("--chunk-frames", type=int, default=2048)
+    studio_batch.add_argument("--channel-policy", choices=["reject", "downmix", "first"], default="reject")
+    for command in (cleanup, comparison, studio, studio_batch):
         command.add_argument("--deep-filter", default="deep-filter", metavar="EXECUTABLE")
         command.add_argument("--rnnoise-library", metavar="LIBRARY")
         command.add_argument("--ffmpeg", default="ffmpeg", metavar="EXECUTABLE")
@@ -54,8 +82,8 @@ def main(argv: list[str] | None = None) -> int:
     listening.add_argument("--true-peak-db", type=float, default=-1.5)
     listening.add_argument("--ffmpeg", default="ffmpeg", metavar="EXECUTABLE")
     args = parser.parse_args(argv)
-    selected = [args.engine] if args.command == "clean" else args.engines if args.command == "benchmark" else []
-    if args.command != "blind-listen" and args.attenuation_limit_db is not None and "deepfilter" not in selected:
+    selected = [args.engine] if args.command == "clean" else args.engines if args.command == "benchmark" else ["deepfilter"] if args.command in {"studio", "studio-batch"} else []
+    if args.command in {"clean", "benchmark", "studio", "studio-batch"} and args.attenuation_limit_db is not None and "deepfilter" not in selected:
         parser.error("--attenuation-limit-db requires the deepfilter engine.")
     if args.command == "clean" and args.engine == "gtcrn" and args.model is None:
         parser.error("--model is required when --engine gtcrn is selected.")
@@ -84,6 +112,32 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(f"Blind listening files: {blind_dir}")
             print(f"Reveal key (keep separate): {reveal}")
+            return 0
+        if args.command == "studio":
+            report = enhance_studio(
+                args.input, args.output, ap_bwe_source=args.ap_bwe_source,
+                checkpoint=args.checkpoint, deep_filter=args.deep_filter,
+                ffmpeg=args.ffmpeg,
+                attenuation_limit_db=100.0 if args.attenuation_limit_db is None else args.attenuation_limit_db,
+                device=args.device, threads=args.threads, chunk_frames=args.chunk_frames,
+                channel_policy=args.channel_policy,
+            )
+            if args.report:
+                report_path = write_report(report, args.report)
+                print(f"Provenance report: {report_path}")
+            print(json.dumps(report, indent=2, ensure_ascii=False))
+            return 0
+        if args.command == "studio-batch":
+            limit = 100.0 if args.attenuation_limit_db is None else args.attenuation_limit_db
+            report_path = benchmark_studio(
+                args.manifest, args.output, ap_bwe_source=args.ap_bwe_source,
+                checkpoint=args.checkpoint, deep_filter=args.deep_filter,
+                ffmpeg=args.ffmpeg,
+                attenuation_limit_db=limit,
+                device=args.device, threads=args.threads, chunk_frames=args.chunk_frames,
+                channel_policy=args.channel_policy,
+            )
+            print(f"Studio batch report: {report_path}")
             return 0
         if args.command == "clean":
             if args.engine == "gtcrn":

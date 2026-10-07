@@ -62,15 +62,15 @@ def decode_raw(
     executable = shutil.which(ffmpeg)
     if executable is None:
         raise VoxRefineError(f"FFmpeg not found: {ffmpeg}.")
-    if channel_policy not in ("preserve", "mono", "reject"):
-        raise VoxRefineError("channel_policy must be preserve, mono, or reject.")
+    if channel_policy not in ("preserve", "mono", "first", "reject"):
+        raise VoxRefineError("channel_policy must be preserve, mono, first, or reject.")
     if channel_policy == "reject" and source.info.channels != domain.channels:
         raise VoxRefineError(
             f"Backend requires {domain.channels} channel(s), input has {source.info.channels}; "
             "select an explicit channel policy."
         )
     channels = source.info.channels if channel_policy == "preserve" else domain.channels
-    if channel_policy == "mono":
+    if channel_policy in ("mono", "first"):
         channels = 1
     if channels != domain.channels:
         raise VoxRefineError("Preserved channel count does not match backend domain.")
@@ -80,7 +80,9 @@ def decode_raw(
     output_format, codec = fmt
     args = [executable, "-nostdin", "-hide_banner", "-loglevel", "error", "-xerror", "-i",
             str(source.path), "-map", "0:a:0", "-vn", "-sn", "-dn"]
-    if channels == 1:
+    if channel_policy == "first":
+        args += ["-af", "pan=mono|c0=c0"]
+    elif channels == 1:
         args += ["-ac", "1"]
     args += ["-ar", str(domain.sample_rate), "-c:a", codec, "-f", output_format, str(target)]
     try:
@@ -92,4 +94,3 @@ def decode_raw(
             "target_sample_rate": domain.sample_rate, "target_channels": channels,
             "sample_format": domain.sample_format, "channel_policy": channel_policy,
             "resampler": "FFmpeg swr", "ffmpeg_args": args}
-

@@ -36,11 +36,6 @@ def prepared_audio(source: Path, ffmpeg: str = "ffmpeg") -> Iterator[Path]:
             f"FFmpeg not found: {ffmpeg}. Install FFmpeg to read MP3, M4A "
             "or WAV files that are not mono PCM16 at 48000 Hz."
         )
-    print(
-        f"Converting {source.name} to mono PCM16 at 48000 Hz "
-        "(multiple channels are mixed; the original is unchanged).",
-        file=sys.stderr,
-    )
     with tempfile.TemporaryDirectory(prefix="voxrefine-convert-") as directory:
         target = Path(directory) / "prepared.wav"
         run_checked([
@@ -50,6 +45,12 @@ def prepared_audio(source: Path, ffmpeg: str = "ffmpeg") -> Iterator[Path]:
             "-map_metadata", "-1", "-ac", "1", "-ar", "48000",
             "-c:a", "pcm_s16le", "-f", "wav", str(target),
         ])
+        media = probe_audio(source, ffmpeg)
+        detail = (
+            " (multiple channels are mixed; the original is unchanged)"
+            if media.info.channels > 1 else " (the original is unchanged)"
+        )
+        print(f"Converting {source.name} to mono PCM16 at 48000 Hz{detail}.", file=sys.stderr)
         inspect_wav(target)
         yield target
 
