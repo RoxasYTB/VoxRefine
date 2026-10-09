@@ -12,7 +12,8 @@ Vérifier les exports Adobe v2 et leurs entrées/rendus associés avant de déci
 | Trois extraits français avec pauses / parole continue / variations de niveau | 9 | 9 | 39,360 / 39,460 / 39,360 s par cellule, spread 0 ms |
 | Christiane, comparaison long-form | 6 | 6 | même durée par cellule |
 | Bruit contrôlé SNR 10 dB avec export Adobe | 5 | 5 | même durée par cellule |
-| **Total** | **62** | **62** | **aucun écart de durée intra-cellule** |
+| Trois voix françaises avec bruit CC0 à ~18 dB, entrée / stem propre / bruit / NFE64-C / Adobe v2 | 15 | 15 | 15,000 s par cellule |
+| **Total** | **77** | **77** | **aucun écart de durée intra-cellule** |
 
 Le manifeste machine contient les SHA-256 : `results/adobe-v2-pair-audit-2026-10-09/audit.json` et `assets.csv`. Tous les fichiers inventoriés se décodent et ont des échantillons finis. Les WAV des paires Adobe/RIR et Fortune sont à 48 kHz; la table machine détaille aussi les groupes long-form et bruit contrôlé.
 
@@ -42,12 +43,12 @@ C'est un diagnostic de coloration, pas une preuve que l'EQ sonne mieux ni qu'ell
 
 ## Décision et prochaine étape
 
-1. L'audit ferme la porte « fichiers absents / durées mal appariées » sur les 11 groupes inventoriés.
+1. L'audit ferme la porte « fichiers absents / durées mal appariées » sur les 14 groupes inventoriés.
 2. Ne pas intégrer LocalVQE à cette voie fichier; son écran streaming duplex est distinct et sa préservation de voix reste problématique.
 3. Ne pas promouvoir NFE64-C comme remplaçant général : l'échec sur Naf est un contre-exemple de régression.
 4. Utiliser DPDFNet comme baseline conservatrice de réduction du bruit, mais présenter séparément son compromis RIR et spectral.
 5. Garder la courbe EQ comme challenger désactivé par défaut. La prochaine étape est de mesurer le profil par rapport aux stems propres/bruit/activité sur les six cellules et les trois clips bruités, et de rechercher une régression de consonnes faibles avant tout changement de produit.
-6. Les comparaisons Adobe supplémentaires nécessitent un export Adobe apparié acquis dans le compte utilisateur. En son absence, le scorecard reste borné aux exports déjà sauvegardés.
+6. Le nouveau cohort ajoute trois exports Adobe v2 appariés à des stems propres et bruits connus. Les résultats descriptifs et leurs limites sont dans [la comparaison des trois voix à 18 dB](adobe-v2-clear-noisy-cohort-2026-10-09.md). Il faut encore un corpus tenu à l’écart pour tester la généralisation.
 
 ## Reproduction
 

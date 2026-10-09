@@ -81,13 +81,17 @@
 
 | Étape | État | Critère de clôture |
 |---|---|---|
-| 1. Scorecard apparié v2 | Inventaire fermé; métriques comparatives à compléter | Script et manifeste vérifient les paires Adobe et leur intégrité; rapports acoustiques restent reliés par expérience |
+| 1. Scorecard apparié v2 | Inventaire et premier cohort propre/bruité terminés; couverture encore limitée | Scripts versionnés vérifient les paires et publient mesures descriptives + figures; diversifier les locuteurs et conditions |
 | 2. Challenger local sur paires exactes | À faire | Fiche par paire + critères conjoints préenregistrés |
 | 3. Diagnostic bruit / RIR / ton / AEC / 8 kHz | Partiel | Amélioration séparée sans confusion entre tâches |
 | 4. Validation hors échantillon | Bloqué par corpus indépendant limité | Résultats tenus à l’écart et écoute A/B |
 | 5. Produit stable et contrôles | Après qualité | Pas de promotion avant les portes précédentes |
 
 ### Progression factuelle — 2026-10-09
+
+- **Adobe v2, trois voix propres + bruit contrôlé :** les trois entrées ont un stem propre et un bruit connu; SNR actif mesuré 17,29–18,00 dB. Les exports Adobe v2 et NFE64-C sont appariés, 15 s, 48 kHz. Détails, hashes et figures : [rapport de cohorte](../../benchmarking/adobe-v2-clear-noisy-cohort-2026-10-09.md).
+- **Préservation :** corrélation médiane d’enveloppe 0,976 pour Adobe contre 0,962 pour NFE64-C. Le p10 des trames vocales faibles NFE64-C sur Emy chute à −37,41 dB contre −30,34 dB pour Adobe; ce candidat ne passe donc pas la porte faible-voix sur ce cas. Une MAE spectrale médiane de 2,40 dB ne compense pas cette régression et ne mesure pas la qualité perçue.
+- **Suite de l’étape 2 :** diagnostiquer la suppression des trames faibles (détection d’activité, masque de gain, plancher de réduction / transition) sur un jeu de développement, ajouter des cas hors réglage, puis réévaluer sans promouvoir le profil en défaut.
 
 - **Tonalité fixe :** le profil `adobe_curve` réduit la MAE active 20 Hz–12 kHz de 4,34 dB (plat) à 1,77 dB sur un clip bruité contrôlé; les MP3 d'écoute ont été nivelés en LUFS. Cela valide uniquement la distance de courbe sur cet extrait, pas le son.
 - **Contrôle par cellules appariées :** le profil réduit la MAE dans cinq paires source/Adobe déjà traitées, mais empire le contrôle sec Naf de 1,55 dB. La médiane des six cellules baisse de 3,60 à 3,00 dB; l'effectif reste trop petit pour conclure à une généralisation.

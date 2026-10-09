@@ -105,6 +105,21 @@ def collect() -> tuple[list[dict], list[dict]]:
             "nfe16_c": controlled / "noise-snr10-adobe-resemble-nfe16-C.wav",
         }))
 
+    clear_root = ROOT / "corpus/samples/clear-noisy-mix-01"
+    clear_outputs = ROOT / "results/clear-noisy-mix-01/audio"
+    clear_adobe = OUTPUT / "exports"
+    for sample_id in ("emy_mixed_ambience18", "remi_crowd18", "stephanie_fan18"):
+        noise_name = {"emy_mixed_ambience18": "fan+crowd-stem.wav",
+                      "remi_crowd18": "crowd-stem.wav",
+                      "stephanie_fan18": "fan-stem.wav"}[sample_id]
+        groups.append((f"clear-noisy-18db/{sample_id}", {
+            "noisy_input": clear_root / "noisy" / f"{sample_id}-noisy.wav",
+            "clean_speech": clear_root / "clean" / f"{sample_id}-clean-reference.wav",
+            "noise_stem": clear_root / "noise" / f"{sample_id}-{noise_name}",
+            "nfe64_c": clear_outputs / f"{sample_id}-resemble-nfe64-C.wav",
+            "adobe_v2": clear_adobe / f"{sample_id}-adobe-v2.wav",
+        }))
+
     for group, assets in groups:
         present = []
         for role, path in assets.items():
