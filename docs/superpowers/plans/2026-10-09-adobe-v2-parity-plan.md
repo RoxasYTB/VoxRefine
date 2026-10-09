@@ -1,8 +1,12 @@
-# Plan de convergence vers Adobe Podcast Enhance v2
+# Adobe Podcast Enhance v2 Convergence Implementation Plan
 
-**Objectif.** Faire converger VoxRefine vers le rendu Adobe v2 sur des entrées appariées, tout en gardant une voix intacte et un traitement local compatible avec le matériel modeste du projet. Adobe est une référence de rendu, jamais une vérité propre. Une proximité de spectre seule ne vaut pas une amélioration audible.
+> **For agentic workers:** Execute inline, one evidence-gated task at a time. Steps use `- [ ]` checkboxes; preserve independent audio problem scopes.
 
-**État de départ.** Les paires Adobe v2 disponibles comprennent trois événements RIR synthétiques (deux voix) et quelques extraits avec bruit contrôlé. Les mesures existantes montrent une réponse Adobe dépendante de l’événement : tail mesuré de +2,5 à +26,2 dB sur les trois événements RIR. La proximité spectrale peut récompenser le sous-traitement. NFE est parfois proche en spectre mais instable en enveloppe et en queue; DPDFNet est plus constant sur la réduction du tail, mais plus éloigné en balance spectrale. Une EQ ajustée sur ces paires réduit la MAE spectrale dans cinq cellules, mais la dégrade de 1,55 dB sur le contrôle sec Naf : une courbe statique ne doit pas devenir le réglage universel. LocalVQE duplex est rapide sur le CPU testé, mais la préservation vocale est trop variable pour l’intégrer.
+**Goal:** Improve VoxRefine’s local speech enhancement toward matched Adobe Podcast Enhance v2 outputs without damaging speech, and keep every quality claim within the measured data.
+
+**Architecture:** Keep the existing Python offline path and treat Adobe as a perceptual style reference. Track noise, room reverb, loudspeaker echo/AEC, tone, and bandwidth extension as separate capabilities; no candidate enters the default chain without passing speech-preservation and held-out gates.
+
+**Tech Stack:** Python, NumPy/SciPy/SoundFile for analysis, existing pinned DPDFNet/Resemble backends, JSON/CSV and static plots for evidence.
 
 ## Principes et contraintes
 
@@ -11,6 +15,16 @@
 3. Pré-enregistrer les seuils par expérience. Les extraits déjà utilisés servent au diagnostic et au choix de paramètres seulement; toute revendication de généralisation exige un jeu tenu à l’écart.
 4. Garder toutes les branches modèles facultatives et locales. Le profil stable actuel ne change pas tant qu’un challenger n’a pas franchi les portes décrites ci-dessous.
 5. Ne pas réécrire le cœur en Rust/C++ pour la qualité audio. Cette étape est justifiée seulement si le profilage d’une chaîne gagnante révèle un coût logiciel important. Le vrai obstacle actuel est la qualité généralisable et les mesures, pas l’orchestration Python hors ligne.
+
+---
+
+## Fichiers et responsabilités
+
+- `scripts/benchmarks/universal_enhancer/audit_adobe_v2_pairs.py`: inventory and integrity audit for existing source/Adobe/candidate audio assets; outputs ignored CSV/JSON only.
+- `docs/benchmarking/adobe-v2-pair-audit-2026-10-09.md`: protocol, inventory, missing-pair table, and limits.
+- `docs/benchmarking/adobe-paired-rir-screen-2026-10-08.md` and `docs/benchmarking/adobe-spectral-proximity-tradeoff-2026-10-08.md`: existing paired acoustic and spectral evidence.
+- `docs/benchmarking/product-evidence-matrix-2026-10-08.md`: product capability gates and current evidence status.
+- `voxrefine/` and `tests/`: untouched until one processing candidate passes the offline audio gates.
 
 ## Plan d’exécution
 
@@ -22,6 +36,8 @@
 - Produire une matrice de disponibilité des paires et marquer explicitement les cas non comparables. Ne pas créer de nouveaux rendus Adobe si le navigateur est déconnecté; les fichiers existants suffisent à l’analyse.
 
 **Porte :** chaque chiffre est recalculable depuis un script versionné et les hashes appariés; aucune métrique spectrale n’est présentée comme métrique de qualité perceptive.
+
+**Livrable d'exécution :** le script d'audit produit pour chaque WAV le SHA-256, le format, le nombre de frames, la durée et l'état de lecture. Il ne traite pas l'audio et ne prétend pas recalculer la qualité acoustique.
 
 ### Étape 2 — Établir le meilleur candidat actuel sur les paires Adobe
 
@@ -65,7 +81,7 @@
 
 | Étape | État | Critère de clôture |
 |---|---|---|
-| 1. Scorecard apparié v2 | En cours | Script et manifeste vérifient toutes les paires Adobe disponibles |
+| 1. Scorecard apparié v2 | Inventaire fermé; métriques comparatives à compléter | Script et manifeste vérifient les paires Adobe et leur intégrité; rapports acoustiques restent reliés par expérience |
 | 2. Challenger local sur paires exactes | À faire | Fiche par paire + critères conjoints préenregistrés |
 | 3. Diagnostic bruit / RIR / ton / AEC / 8 kHz | Partiel | Amélioration séparée sans confusion entre tâches |
 | 4. Validation hors échantillon | Bloqué par corpus indépendant limité | Résultats tenus à l’écart et écoute A/B |
