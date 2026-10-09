@@ -15,7 +15,7 @@ Does a dereverberation stage after the user's preferred DeepFilterNet attenuatio
 
 ## Results
 
-| Candidate | Long-pause RMS (dBFS) | Median tail 150–300 ms (dB vs pre-offset) | Median tail 300–600 ms (dB vs pre-offset) | Peak (dBFS) |
+| Candidate | Long-pause RMS (dBFS) | Tail 150–300 ms (dB vs pre-offset) | Tail 300–600 ms (dB vs pre-offset) | Peak (dBFS) |
 |---|---:|---:|---:|---:|
 | Adobe v2 | −62.19 | −32.88 | −32.14 | −10.69 |
 | DeepFilterNet cap 60 | −50.11 | −23.81 | −21.70 | −7.63 |
@@ -25,13 +25,15 @@ Does a dereverberation stage after the user's preferred DeepFilterNet attenuatio
 | Cap 60 + DPDFNet2 (75% blend) | −55.45 | −35.68 | −28.36 | −7.67 |
 | Cap 60 + DPDFNet2 (100% stage) | −56.64 | −55.92 | −30.94 | −7.69 |
 
-DPDFNet2 full-stage gets the 300–600 ms median within 1.20 dB of Adobe, and lowers long-pause RMS by another 6.53 dB versus cap 60. Its 150–300 ms median is far lower than Adobe (−55.92 vs −32.88 dB); this suggests gating/over-suppression during some pauses rather than a uniformly Adobe-like decay. The 75% blend has a less extreme 150–300 ms median (−35.68 dB) and 300–600 ms median 3.78 dB above Adobe. Neither is a validated universal setting.
+At the one scored terminal event, DPDFNet2 full-stage's 300–600 ms value is within 1.20 dB of Adobe, and its long-pause RMS is another 6.53 dB lower than cap 60. Its 150–300 ms value is far lower than Adobe (−55.92 vs −32.88 dB); this suggests gating/over-suppression during some pauses rather than a uniformly Adobe-like decay. The 75% blend has a less extreme 150–300 ms value (−35.68 dB) and a 300–600 ms value 3.78 dB above Adobe. Neither is a validated universal setting.
 
-The compact dereverb model only improves the 300–600 ms median by 1.61 dB against cap 60, so it does not close this real-recording gap in its current form. WPE suppresses some short tails but is inconsistent at the terminal tail and is too slow in the screened offline configuration (about 1.3–2.8x RTF); it is not the lead candidate.
+**Correction to the table above:** the earlier analysis called these values medians across offsets. In fact, the 150–300 ms and 300–600 ms windows were eligible at only one terminal speech offset in this 6.2 s recording (`n=1` for each window). These are single-event descriptive values, not medians or stable estimates of room decay. They also combine room tail and any residual noise; the recording has no dry reference to separate them. The per-offset analysis should therefore be read as a diagnostic for this sample only.
+
+The compact dereverb model only improves the single scored 300–600 ms terminal value by 1.61 dB against cap 60, so it does not close this real-recording gap in its current form. WPE suppresses some short tails but is inconsistent at the terminal tail and is too slow in the screened offline configuration (about 1.3–2.8x RTF); it is not the lead candidate.
 
 ## Interpretation and limitations
 
-The paired measurements show a strong room-tail reduction from DPDFNet2 after cap 60, with output active RMS nearly unchanged after level matching. That is a promising signal for the exact recording, not evidence of full Adobe parity. The unusually deep 150–300 ms suppression and the model's prior weak-speech failures mean the full cascade may sound gated or truncate quiet consonants. Listen before considering integration. This is one French voice recording and one microphone/room; it cannot establish universal performance. No model has been trained on Adobe outputs, and waveform/spectrogram matching alone cannot reveal Adobe's proprietary processing chain.
+The paired measurements show a strong post-speech residual reduction from DPDFNet2 after cap 60 in this one recording, with output active RMS nearly unchanged after level matching. Because the terminal windows are `n=1` and mix room tail with residual noise, this is not a stable room-tail estimate or evidence of full Adobe parity. The unusually deep 150–300 ms suppression and the model's prior weak-speech failures mean the full cascade may sound gated or truncate quiet consonants. This is one French voice recording and one microphone/room; it cannot establish universal performance. No model has been trained on Adobe outputs, and waveform/spectrogram matching alone cannot reveal Adobe's proprietary processing chain.
 
 ## Artifacts
 
