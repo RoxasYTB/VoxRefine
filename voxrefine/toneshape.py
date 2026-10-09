@@ -54,3 +54,59 @@ def apply_shelves(
     if treble_db:
         y = _shelf(y, treble_corner_hz, sample_rate, treble_db, low=False)
     return y.astype(np.float32)
+
+
+def apply_gentle_compression(
+    audio: np.ndarray,
+    sample_rate: int,
+    *,
+    threshold_db: float = -16.0,
+    ratio: float = 1.5,
+    knee_db: float = 6.0,
+    attack_ms: float = 10.0,
+    release_ms: float = 120.0,
+) -> tuple[np.ndarray, float]:
+    """Gently reduce only sustained loud peaks; return audio and max reduction.
+
+    A centered RMS detector uses half-window lookahead (10 ms at the defaults).
+    This is a finishing compressor, not a denoiser or a substitute for a limiter.
+    """
+    x = np.asarray(audio, dtype=np.float64)
+    if x.ndim != 1 or x.size == 0 or not np.isfinite(x).all():
+        raise ValueError("Compression requires a non-empty finite mono signal.")
+    if sample_rate <= 0 or not -60.0 <= threshold_db <= 0.0:
+        raise ValueError("Invalid sample rate or compressor threshold.")
+    if not 1.0 <= ratio <= 10.0 or not 0.0 <= knee_db <= 24.0:
+        raise ValueError("Compressor ratio must be 1–10 and knee 0–24 dB.")
+    if attack_ms <= 0.0 or release_ms <= 0.0:
+        raise ValueError("Compressor attack and release must be positive.")
+
+    from scipy.ndimage import uniform_filter1d
+
+    window = max(1, round(sample_rate * 0.020))
+    envelope = np.sqrt(uniform_filter1d(x * x, size=window, mode="nearest") + 1e-12)
+    level_db = 20.0 * np.log10(np.maximum(envelope, 1e-12))
+    over = level_db - threshold_db
+    half_knee = knee_db / 2.0
+    if knee_db:
+        reduction_db = np.where(
+            over <= -half_knee,
+            0.0,
+            np.where(
+                over >= half_knee,
+                over * (1.0 - 1.0 / ratio),
+                ((over + half_knee) ** 2 / (2.0 * knee_db)) * (1.0 - 1.0 / ratio),
+            ),
+        )
+    else:
+        reduction_db = np.maximum(over, 0.0) * (1.0 - 1.0 / ratio)
+    target = 10.0 ** (-reduction_db / 20.0)
+    gain = np.empty_like(target)
+    state = 1.0
+    attack = np.exp(-1.0 / (sample_rate * attack_ms / 1000.0))
+    release = np.exp(-1.0 / (sample_rate * release_ms / 1000.0))
+    for index, target_gain in enumerate(target):
+        coefficient = attack if target_gain < state else release
+        state = coefficient * state + (1.0 - coefficient) * target_gain
+        gain[index] = state
+    return (x * gain).astype(np.float32), float(np.max(-20.0 * np.log10(np.maximum(gain, 1e-12))))

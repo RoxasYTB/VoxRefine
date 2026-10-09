@@ -5,10 +5,11 @@ import unittest
 
 try:
     import numpy as np
-    from voxrefine.toneshape import apply_shelves
+    from voxrefine.toneshape import apply_gentle_compression, apply_shelves
 except ImportError:
     np = None
     apply_shelves = None
+    apply_gentle_compression = None
 
 
 @unittest.skipUnless(importlib.util.find_spec("numpy") and importlib.util.find_spec("scipy"),
@@ -53,6 +54,20 @@ class ToneShelfTests(unittest.TestCase):
             apply_shelves(np.zeros((100, 2)), self.rate)
         with self.assertRaises(ValueError):
             apply_shelves(np.zeros(100), self.rate, bass_db=-13)
+
+    def test_gentle_compressor_reduces_loud_burst_not_quiet_speech(self) -> None:
+        quiet = self.tone(220) * 0.03
+        loud = self.tone(220) * 0.7
+        source = np.concatenate([quiet, loud, quiet]).astype(np.float32)
+        result, max_reduction = apply_gentle_compression(source, self.rate)
+        self.assertEqual(len(result), len(source))
+        self.assertTrue(np.isfinite(result).all())
+        self.assertGreater(max_reduction, 1.0)
+        quiet_gain = self.steady_gain_db(source[:self.rate // 2], result[:self.rate // 2])
+        loud_gain = self.steady_gain_db(source[self.rate: self.rate + self.rate // 2],
+                                        result[self.rate: self.rate + self.rate // 2])
+        self.assertAlmostEqual(quiet_gain, 0.0, delta=0.2)
+        self.assertLess(loud_gain, -1.0)
 
 
 if __name__ == "__main__":

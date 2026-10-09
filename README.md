@@ -332,3 +332,14 @@ Protocole, définitions des mesures, empreintes, figures et CSV :
 Le sample source LibriVox est marqué Public Domain Mark (vérifier la juridiction);
 le rendu Adobe v2 et tous les fichiers audio restent locaux et ne sont pas
 publiés dans le dépôt.
+
+### Adoucissement des pics après traitement audio
+
+Le preset `studio-resemble` utilise maintenant un compresseur doux (seuil
+−16 dBFS, ratio 1,5:1, genou 6 dB), puis une atténuation de sortie de −2 dB.
+Sur trois voix bruitées, les crêtes vocales p99 baissent de 2,0 à 4,8 dB; le
+changement est surtout marqué sur l'extrait dont les pics étaient les plus
+forts. Ce traitement régularise le niveau, mais ne répare pas à lui seul les
+artefacts du modèle. Le mode `--dynamics off` et `--output-gain-db 0` permettent
+de comparer sans ces étapes. Mesures, graphiques, commande reproductible et
+limites : [`post-denoise-finish-2026-10-09.md`](docs/benchmarking/post-denoise-finish-2026-10-09.md).

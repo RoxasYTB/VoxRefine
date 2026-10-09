@@ -74,6 +74,10 @@ def main(argv: list[str] | None = None) -> int:
     studio_resemble.add_argument("--tone", choices=["flat", "C", "soft-edges"], default="C",
                                  help="C trims treble; soft-edges additionally trims sub-bass and upper treble")
     studio_resemble.add_argument("--treble-trim-db", type=float, default=-1.5)
+    studio_resemble.add_argument("--dynamics", choices=["off", "gentle"], default="gentle",
+                                 help="Gentle soft-knee compression of loud phrases (default: gentle).")
+    studio_resemble.add_argument("--output-gain-db", type=float, default=-2.0,
+                                 help="Final output attenuation in dB (-12 to 0; default -2). Does not remove artifacts.")
     studio_resemble.add_argument(
         "--post-denoise-limit-db", type=float,
         help="Optional DeepFilterNet pass after Resemble; 18 dB is the gentle benchmarked challenger.",
@@ -169,6 +173,8 @@ def main(argv: list[str] | None = None) -> int:
                 upstream=args.upstream, model_dir=args.model_dir,
                 device=args.device, nfe=args.nfe, chunk_seconds=args.chunk_seconds, tone=args.tone,
                 treble_trim_db=args.treble_trim_db,
+                dynamics=args.dynamics,
+                output_gain_db=args.output_gain_db,
                 post_denoise_limit_db=args.post_denoise_limit_db,
                 deep_filter=args.deep_filter, ffmpeg=args.ffmpeg,
                 channel_policy=args.channel_policy,

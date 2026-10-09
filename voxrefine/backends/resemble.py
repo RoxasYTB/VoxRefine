@@ -36,6 +36,8 @@ def enhance_resemble(
     chunk_seconds: float = 3.0,
     tone: str = "C",
     treble_trim_db: float = -1.5,
+    dynamics: str = "gentle",
+    output_gain_db: float = -2.0,
     post_denoise_limit_db: float | None = None,
     deep_filter: str = "deep-filter",
     ffmpeg: str = "ffmpeg",
@@ -60,6 +62,10 @@ def enhance_resemble(
         raise VoxRefineError("tone must be flat, C, or soft-edges.")
     if tone in {"C", "soft-edges"} and not -6 <= treble_trim_db <= 0:
         raise VoxRefineError("C/soft-edges base treble trim must be between -6 and 0 dB.")
+    if dynamics not in {"off", "gentle"}:
+        raise VoxRefineError("dynamics must be off or gentle.")
+    if not -12 <= output_gain_db <= 0:
+        raise VoxRefineError("output_gain_db must be between -12 and 0 dB.")
     if post_denoise_limit_db is not None and not 0 <= post_denoise_limit_db <= 100:
         raise VoxRefineError("Post-denoise attenuation limit must be between 0 and 100 dB.")
     if channel_policy not in {"reject", "downmix", "first"}:
@@ -94,7 +100,7 @@ def enhance_resemble(
         command = [python_exec, str(worker), "--input", str(raw_in), "--output", str(raw_out),
                    "--sample-count", str(samples), "--upstream", str(upstream), "--model-dir", str(model_dir),
                    "--device", device, "--nfe", str(nfe), "--tone", tone,
-                   "--treble-trim-db", str(treble_trim_db),
+                   "--treble-trim-db", str(treble_trim_db), "--dynamics", dynamics,
                    "--chunk-seconds", str(chunk_seconds)]
         started = time.perf_counter()
         try:
@@ -135,9 +141,23 @@ def enhance_resemble(
             with wave.open(str(selected_wav), "rb") as audio:
                 if (audio.getnchannels(), audio.getsampwidth(), audio.getframerate(), audio.getnframes()) != (1, 2, 48000, samples):
                     raise VoxRefineError("DeepFilterNet post-denoise output failed format or duration validation.")
+        final_wav = selected_wav
+        if output_gain_db != 0.0:
+            final_wav = tmp / "output-final-gain.wav"
+            try:
+                subprocess.run([ffmpeg_exec, "-nostdin", "-hide_banner", "-loglevel", "error", "-xerror",
+                                "-i", str(selected_wav), "-af", f"volume={output_gain_db:.6f}dB",
+                                "-c:a", "pcm_s16le", "-f", "wav", str(final_wav)],
+                               check=True, capture_output=True)
+            except subprocess.CalledProcessError as error:
+                detail = error.stderr.decode("utf-8", errors="replace") if error.stderr else str(error)
+                raise VoxRefineError(f"FFmpeg could not apply final output gain: {detail}") from error
+            with wave.open(str(final_wav), "rb") as audio:
+                if (audio.getnchannels(), audio.getsampwidth(), audio.getframerate(), audio.getnframes()) != (1, 2, 48000, samples):
+                    raise VoxRefineError("Final output-gain WAV failed format or duration validation.")
         total_elapsed = time.perf_counter() - job_started
         try:
-            os.link(selected_wav, target)
+            os.link(final_wav, target)
         except FileExistsError as error:
             raise VoxRefineError(f"Output already exists: {target}.") from error
     return {
@@ -157,6 +177,8 @@ def enhance_resemble(
         **worker_report,
         "post_denoise": post_identity,
         "post_denoise_wall_seconds": post_elapsed,
+        "final_output_gain_db": output_gain_db,
+        "final_dynamics_mode": dynamics,
         "total_wall_seconds_including_decode_encode_and_post_denoise": total_elapsed,
         "total_rtf_including_decode_encode_and_post_denoise": total_elapsed / (samples / 48000),
     }

@@ -1,0 +1,224 @@
+{
+  "study": "Level, tone and post-denoiser screening of existing renders",
+  "date": "2026-10-09",
+  "sample_rate_hz": 48000,
+  "python": "3.13.5",
+  "software_versions": {
+    "numpy": "2.2.6",
+    "scipy": "1.18.1",
+    "soundfile": "0.14.0",
+    "pyloudnorm": "0.2.0"
+  },
+  "source_sha256": {
+    "stephanie_fan18": {
+      "enhanced_sha256": "80570b91ad15eee5168a0072ada7bc331be98f48ca219a95fbf507f7bf759b9c",
+      "clean_sha256": "95f12e0f1dabd8d3d54805c0fe7a8e3a279b57eaeaf8d3c3e8eaea68d69479f1"
+    },
+    "remi_crowd18": {
+      "enhanced_sha256": "18bdb1aa6e5d023d2e06731f5e66c7c184b7541c5735b0f06b0d462b38320442",
+      "clean_sha256": "a9dbb110ed74570cc19ba5f7039737d7e925e245e3789e2c06f468b434eb10a1"
+    },
+    "emy_mixed_ambience18": {
+      "enhanced_sha256": "865bf4192b7fbb7935b3bf33084412cd81390e45ef8f46b95c18e7d0d50c3e8f",
+      "clean_sha256": "2653f4814bd5f2f038bc883f36b52ce1a2408cdb8b97480156c47f2be32b3f86"
+    }
+  },
+  "pipeline_under_test": {
+    "tone": "existing Resemble C; optional soft-edges \u22123 dB below 100 Hz and \u22122.5 dB above 3.5 kHz",
+    "compressor": "20 ms centered RMS detector; \u221216 dBFS threshold; 1.5:1; 6 dB soft knee; 10 ms attack; 120 ms release",
+    "final_output_gain_db": -2.0,
+    "post_denoiser_sweep_db": [
+      6,
+      18
+    ]
+  },
+  "measurement": "Speech activity from exact clean reference (20 ms RMS, max-35 dB, \u00b160 ms dilation); spectrum MAE compared after matching active speech median RMS. True peak estimated at 4x oversampling.",
+  "candidates": [
+    {
+      "sample": "stephanie_fan18",
+      "variant": "A_current_C_no_finish",
+      "duration_s": 15.0,
+      "LUFS_I_dB": -25.571720805866715,
+      "active_speech_RMS_p50_dBFS": -27.579945708918153,
+      "active_speech_RMS_p90_dBFS": -20.856308849499612,
+      "active_speech_RMS_p99_dBFS": -17.94556687959791,
+      "active_gain_needed_to_match_clean_dB": 0.7932300877674219,
+      "true_peak_4x_dBTP": -4.5123593344193935,
+      "spectral_MAE_vs_clean_level_matched_dB": 1.398559287761222
+    },
+    {
+      "sample": "stephanie_fan18",
+      "variant": "B_C_gentle_compressor_minus2dB",
+      "duration_s": 15.0,
+      "LUFS_I_dB": -27.58538273035006,
+      "active_speech_RMS_p50_dBFS": -29.579945409524456,
+      "active_speech_RMS_p90_dBFS": -22.856336833284114,
+      "active_speech_RMS_p99_dBFS": -19.986510171716205,
+      "active_gain_needed_to_match_clean_dB": 2.793229788373729,
+      "true_peak_4x_dBTP": -7.037305828803516,
+      "spectral_MAE_vs_clean_level_matched_dB": 1.4012360821528993
+    },
+    {
+      "sample": "stephanie_fan18",
+      "variant": "C_softedges_gentle_compressor_minus2dB",
+      "duration_s": 15.0,
+      "LUFS_I_dB": -28.069472554394782,
+      "active_speech_RMS_p50_dBFS": -30.090011419516173,
+      "active_speech_RMS_p90_dBFS": -23.187768808622458,
+      "active_speech_RMS_p99_dBFS": -20.239935620677123,
+      "active_gain_needed_to_match_clean_dB": 3.303295798365438,
+      "true_peak_4x_dBTP": -7.27164412708527,
+      "spectral_MAE_vs_clean_level_matched_dB": 1.4280665454966093
+    },
+    {
+      "sample": "stephanie_fan18",
+      "variant": "D_C_gentle_DFN6_minus2dB",
+      "duration_s": 15.0,
+      "LUFS_I_dB": -27.7143443960929,
+      "active_speech_RMS_p50_dBFS": -29.509517951436504,
+      "active_speech_RMS_p90_dBFS": -22.85807768035811,
+      "active_speech_RMS_p99_dBFS": -19.855132095406994,
+      "active_gain_needed_to_match_clean_dB": 2.722802330285774,
+      "true_peak_4x_dBTP": -7.1502957165449486,
+      "spectral_MAE_vs_clean_level_matched_dB": 1.3995084688687174
+    },
+    {
+      "sample": "stephanie_fan18",
+      "variant": "D_C_gentle_DFN18_minus2dB",
+      "duration_s": 15.0,
+      "LUFS_I_dB": -27.78327094486902,
+      "active_speech_RMS_p50_dBFS": -29.59273835754881,
+      "active_speech_RMS_p90_dBFS": -22.921549424273962,
+      "active_speech_RMS_p99_dBFS": -19.926569272945542,
+      "active_gain_needed_to_match_clean_dB": 2.80602273639808,
+      "true_peak_4x_dBTP": -7.236226527501915,
+      "spectral_MAE_vs_clean_level_matched_dB": 1.3979827002219523
+    },
+    {
+      "sample": "remi_crowd18",
+      "variant": "A_current_C_no_finish",
+      "duration_s": 15.0,
+      "LUFS_I_dB": -23.418106367665292,
+      "active_speech_RMS_p50_dBFS": -25.824479915665588,
+      "active_speech_RMS_p90_dBFS": -18.5511818846544,
+      "active_speech_RMS_p99_dBFS": -14.369592014532639,
+      "active_gain_needed_to_match_clean_dB": 0.6872939314657961,
+      "true_peak_4x_dBTP": -4.255545959641364,
+      "spectral_MAE_vs_clean_level_matched_dB": 2.061248819678442
+    },
+    {
+      "sample": "remi_crowd18",
+      "variant": "B_C_gentle_compressor_minus2dB",
+      "duration_s": 15.0,
+      "LUFS_I_dB": -25.58115454638522,
+      "active_speech_RMS_p50_dBFS": -27.973994151583334,
+      "active_speech_RMS_p90_dBFS": -20.721884475652764,
+      "active_speech_RMS_p99_dBFS": -16.77134778817728,
+      "active_gain_needed_to_match_clean_dB": 2.8368081673835444,
+      "true_peak_4x_dBTP": -6.517217098595147,
+      "spectral_MAE_vs_clean_level_matched_dB": 2.0476224033502923
+    },
+    {
+      "sample": "remi_crowd18",
+      "variant": "C_softedges_gentle_compressor_minus2dB",
+      "duration_s": 15.0,
+      "LUFS_I_dB": -25.875247811466743,
+      "active_speech_RMS_p50_dBFS": -28.414138195315964,
+      "active_speech_RMS_p90_dBFS": -20.955055050767694,
+      "active_speech_RMS_p99_dBFS": -16.93562490390326,
+      "active_gain_needed_to_match_clean_dB": 3.2769522111161753,
+      "true_peak_4x_dBTP": -7.116715604124206,
+      "spectral_MAE_vs_clean_level_matched_dB": 2.341396222153251
+    },
+    {
+      "sample": "remi_crowd18",
+      "variant": "D_C_gentle_DFN6_minus2dB",
+      "duration_s": 15.0,
+      "LUFS_I_dB": -25.697799385557808,
+      "active_speech_RMS_p50_dBFS": -28.321438075431903,
+      "active_speech_RMS_p90_dBFS": -20.75143667025455,
+      "active_speech_RMS_p99_dBFS": -17.15511554709707,
+      "active_gain_needed_to_match_clean_dB": 3.1842520912321115,
+      "true_peak_4x_dBTP": -6.641294036192895,
+      "spectral_MAE_vs_clean_level_matched_dB": 2.0576374745159423
+    },
+    {
+      "sample": "remi_crowd18",
+      "variant": "D_C_gentle_DFN18_minus2dB",
+      "duration_s": 15.0,
+      "LUFS_I_dB": -25.769977542774416,
+      "active_speech_RMS_p50_dBFS": -28.433638177166532,
+      "active_speech_RMS_p90_dBFS": -20.803648241173676,
+      "active_speech_RMS_p99_dBFS": -17.221813212414638,
+      "active_gain_needed_to_match_clean_dB": 3.29645219296674,
+      "true_peak_4x_dBTP": -6.735358834160787,
+      "spectral_MAE_vs_clean_level_matched_dB": 2.0574690129353344
+    },
+    {
+      "sample": "emy_mixed_ambience18",
+      "variant": "A_current_C_no_finish",
+      "duration_s": 15.0,
+      "LUFS_I_dB": -15.864505995872943,
+      "active_speech_RMS_p50_dBFS": -25.0573427392954,
+      "active_speech_RMS_p90_dBFS": -10.467925638098293,
+      "active_speech_RMS_p99_dBFS": -7.38946372758723,
+      "active_gain_needed_to_match_clean_dB": 5.906089856051112,
+      "true_peak_4x_dBTP": -1.4197638822201424,
+      "spectral_MAE_vs_clean_level_matched_dB": 2.0184904505705563
+    },
+    {
+      "sample": "emy_mixed_ambience18",
+      "variant": "B_C_gentle_compressor_minus2dB",
+      "duration_s": 15.0,
+      "LUFS_I_dB": -19.62299989274154,
+      "active_speech_RMS_p50_dBFS": -27.607928093617783,
+      "active_speech_RMS_p90_dBFS": -14.332303709190038,
+      "active_speech_RMS_p99_dBFS": -12.156297375687988,
+      "active_gain_needed_to_match_clean_dB": 8.456675210373499,
+      "true_peak_4x_dBTP": -5.622547066369523,
+      "spectral_MAE_vs_clean_level_matched_dB": 1.477956059021592
+    },
+    {
+      "sample": "emy_mixed_ambience18",
+      "variant": "C_softedges_gentle_compressor_minus2dB",
+      "duration_s": 15.0,
+      "LUFS_I_dB": -19.91582300917064,
+      "active_speech_RMS_p50_dBFS": -28.384889656199313,
+      "active_speech_RMS_p90_dBFS": -14.51200068150903,
+      "active_speech_RMS_p99_dBFS": -12.276199578036584,
+      "active_gain_needed_to_match_clean_dB": 9.233636772955025,
+      "true_peak_4x_dBTP": -5.644589464676605,
+      "spectral_MAE_vs_clean_level_matched_dB": 1.6681345726357892
+    },
+    {
+      "sample": "emy_mixed_ambience18",
+      "variant": "D_C_gentle_DFN6_minus2dB",
+      "duration_s": 15.0,
+      "LUFS_I_dB": -19.73321470842158,
+      "active_speech_RMS_p50_dBFS": -27.86827310162326,
+      "active_speech_RMS_p90_dBFS": -14.527544445037698,
+      "active_speech_RMS_p99_dBFS": -12.275469222136284,
+      "active_gain_needed_to_match_clean_dB": 8.71702021837897,
+      "true_peak_4x_dBTP": -5.710226514374062,
+      "spectral_MAE_vs_clean_level_matched_dB": 1.5568885776808288
+    },
+    {
+      "sample": "emy_mixed_ambience18",
+      "variant": "D_C_gentle_DFN18_minus2dB",
+      "duration_s": 15.0,
+      "LUFS_I_dB": -19.803250604777155,
+      "active_speech_RMS_p50_dBFS": -27.931845356757243,
+      "active_speech_RMS_p90_dBFS": -14.583405946459873,
+      "active_speech_RMS_p99_dBFS": -12.337298076297214,
+      "active_gain_needed_to_match_clean_dB": 8.780592473512957,
+      "true_peak_4x_dBTP": -5.7767541055882585,
+      "spectral_MAE_vs_clean_level_matched_dB": 1.5603751058856838
+    }
+  ],
+  "limitations": [
+    "No Resemble re-inference: checkpoint is unavailable locally.",
+    "Flat gain changes loudness and peaks but cannot remove denoiser artifacts.",
+    "The spectral MAE is descriptive and is not a listening-quality metric.",
+    "Only three voice/noise pairs."
+  ]
+}

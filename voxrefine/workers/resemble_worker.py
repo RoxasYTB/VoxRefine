@@ -15,7 +15,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from voxrefine.backends.resemble_compat import install_numpy_fsolve_compat
-from voxrefine.toneshape import apply_shelves
+from voxrefine.toneshape import apply_gentle_compression, apply_shelves
 
 
 def sha256(path: Path) -> str:
@@ -38,6 +38,7 @@ def main() -> int:
     parser.add_argument("--chunk-seconds", type=float, default=3.0)
     parser.add_argument("--tone", choices=("flat", "C", "soft-edges"), default="C")
     parser.add_argument("--treble-trim-db", type=float, default=-1.5)
+    parser.add_argument("--dynamics", choices=("off", "gentle"), default="gentle")
     args = parser.parse_args()
 
     import numpy as np
@@ -180,6 +181,9 @@ def main() -> int:
     if args.tone == "soft-edges":
         enhanced = apply_shelves(enhanced, 48000, bass_db=-3.0, bass_corner_hz=100.0,
                                  treble_db=-2.5, treble_corner_hz=3500.0)
+    compressor_reduction_db = 0.0
+    if args.dynamics == "gentle":
+        enhanced, compressor_reduction_db = apply_gentle_compression(enhanced, 48000)
     meter = pyln.Meter(48000)
     input_lufs = float(meter.integrated_loudness(raw.astype(np.float64)))
     headroom_gain_db = 0.0
@@ -207,6 +211,16 @@ def main() -> int:
         "lambda": 1.0,
         "tau": 0.5,
         "tone": args.tone,
+        "dynamics": args.dynamics,
+        "dynamics_compressor": ({
+            "threshold_dbfs": -16.0,
+            "ratio": 1.5,
+            "knee_db": 6.0,
+            "attack_ms": 10.0,
+            "release_ms": 120.0,
+            "detector_lookahead_ms": 10.0,
+            "max_gain_reduction_db": compressor_reduction_db,
+        } if args.dynamics == "gentle" else None),
         "treble_trim_db": args.treble_trim_db if args.tone in {"C", "soft-edges"} else 0.0,
         "tone_cutoff_hz": 5500 if args.tone in {"C", "soft-edges"} else None,
         "soft_edge_bass_trim_db": -3.0 if args.tone == "soft-edges" else 0.0,
