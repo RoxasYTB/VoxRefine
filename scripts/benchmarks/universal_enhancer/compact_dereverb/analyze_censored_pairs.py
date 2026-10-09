@@ -35,6 +35,7 @@ def analyze(input_dir: Path, output_path: Path) -> dict:
             key = (row["speaker"], row["rir_file"], metric["band_ms"])
             paired.setdefault(key, {})[row["model"]] = {
                 "room": row["room"],
+                "distance_role": row["distance_role"],
                 "tail_db": metric["output_tail_vs_same_fixed_input_speech_db"],
                 "floor_db": metric["dry_model_floor_vs_fixed_input_speech_db"],
             }
@@ -61,6 +62,7 @@ def analyze(input_dir: Path, output_path: Path) -> dict:
                 lower, upper = float("-inf"), float("inf")
                 status = "both_at_floor"
             examples.append({"speaker": speaker, "rir_file": rir_file, "room": a["room"],
+                "distance_role": a["distance_role"],
                 "a_tail_db": a["tail_db"], "b_tail_db": b["tail_db"],
                 "a_floor_db": a["floor_db"], "b_floor_db": b["floor_db"],
                 "common_floor_plus_3db": common_censor_limit, "status": status,
@@ -88,6 +90,21 @@ def analyze(input_dir: Path, output_path: Path) -> dict:
                 "guaranteed_candidate_wins_gt_3db": sum(e["improvement_lower_bound_db"] > 3 for e in room_rows),
                 "guaranteed_reference_wins": sum(e["improvement_upper_bound_db"] < 0 for e in room_rows),
             }
+        by_distance_role = {}
+        for role in sorted({e["distance_role"] for e in examples}):
+            role_rows = [e for e in examples if e["distance_role"] == role]
+            role_lower = np.asarray([e["improvement_lower_bound_db"] for e in role_rows], dtype=np.float64)
+            role_upper = np.asarray([e["improvement_upper_bound_db"] for e in role_rows], dtype=np.float64)
+            by_distance_role[role] = {
+                "pair_count": len(role_rows),
+                "possible_role_median_improvement_interval_db": [
+                    float(np.median(role_lower)), float(np.median(role_upper))],
+                "guaranteed_candidate_wins_gt_0db": sum(e["improvement_lower_bound_db"] > 0 for e in role_rows),
+                "guaranteed_candidate_wins_gt_3db": sum(e["improvement_lower_bound_db"] > 3 for e in role_rows),
+                "guaranteed_reference_wins": sum(e["improvement_upper_bound_db"] < 0 for e in role_rows),
+                "censor_status_counts": dict(sorted((status, sum(e["status"] == status for e in role_rows))
+                    for status in {e["status"] for e in role_rows})),
+            }
         bands[band] = {
             "pair_count": len(examples),
             "censor_status_counts": dict(sorted(status_counts.items())),
@@ -99,6 +116,7 @@ def analyze(input_dir: Path, output_path: Path) -> dict:
             "guaranteed_reference_wins": sum(e["improvement_upper_bound_db"] < 0 for e in examples),
             "both_censored_or_unresolved": sum(e["status"] == "both_at_floor" for e in examples),
             "by_room": by_room,
+            "by_distance_role": by_distance_role,
             "paired_rir_observations": examples,
         }
     room_count = int(manifest["room_count"])

@@ -159,7 +159,7 @@ def summarize(input_dir: Path, output_dir: Path) -> dict:
     ax.hist(list(rir_scales.values()), bins=8, color="#537f74", edgecolor="white")
     ax.set_xlabel("Scalaire appliqué pour mettre le pic early-path à 1 (échelle linéaire)")
     ax.set_ylabel("Nombre de RIR")
-    ax.set_title("Répartition des adaptations de gain des 18 RIR mesurées")
+    ax.set_title(f"Répartition des adaptations de gain de {len(rir_scales)} RIR mesurées")
     ax.grid(axis="y", alpha=.25)
     fig.savefig(output_dir / "rir-training-domain-scales.png", dpi=170)
     plt.close(fig)
