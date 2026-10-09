@@ -30,6 +30,12 @@ La sortie est calculée en environ 16 % de la durée audio sur ce CPU précis. L
 
 Ce mini-écran ne compare pas à Adobe Podcast, ne comprend que trois voix avec bruit ajouté, et n'évalue pas les queues de réverbération. Il ne permet donc pas de conclure à une proximité studio ou une qualité universelle. Il faut garder les conclusions des benchmarks Adobe/DPDFNet séparées.
 
+## Contrôle duplex avec la vraie référence
+
+Pour distinguer « fichier mono sans référence » du vrai cas AEC, le même binaire a ensuite été exécuté sur les deux fichiers `dt_mic.wav` et `dt_ref.wav` de la démo officielle LocalVQE (10 s, 16 kHz). Le maximum de corrélation normalisée en valeur absolue entre sortie micro et référence de lecture, recherché sur ±500 ms, vaut 0.0721 à l'entrée, 0.0672 avec référence nulle, et 0.0160 avec référence réelle. La référence réelle réduit nettement cette corrélation sur cet exemple; ce proxy ne constitue pas un ERLE, car le fichier ne fournit pas de cible voix proche isolée. Le traitement a pris 1.652 s (RTF 0.165) sur le CPU de test.
+
+Cette observation justifie un essai d'intégration **duplex** distinct, mais pas une modification du traitement fichier. L'adaptateur live actuel ne reçoit que des trames mono 48 kHz/480 samples; `LiveEngine.capture()` et `LiveBackend.process()` n'ont pas de champ de référence. LocalVQE attend des paires micro/référence synchronisées à 16 kHz/256 samples. Il faut d'abord transmettre réellement le flux de lecture et traiter son alignement/dérive d'horloge. Une référence artificielle nulle ou non synchronisée annule le bénéfice AEC observé ici.
+
 ## Reproduction
 
 Le code, le modèle et leurs poids ont été clonés/téléchargés dans `.tools/localvqe-screen/` (zone locale ignorée par Git). Le modèle fait environ 2.3 MB. Le projet amont est sous Apache-2.0. Le benchmark a utilisé un petit adaptateur Python `ctypes` autour de `localvqe_new_with_frontend` et `localvqe_process_f32`; les sorties WAV sont conservées localement à côté des échantillons, sans être nécessaires pour le build produit.
