@@ -56,6 +56,43 @@ def apply_shelves(
     return y.astype(np.float32)
 
 
+def apply_peaking_eq(
+    audio: np.ndarray,
+    sample_rate: int,
+    bands: tuple[tuple[float, float, float], ...],
+) -> np.ndarray:
+    """Apply fixed RBJ peaking filters as a stationary, low-latency EQ.
+
+    Each band is ``(center_hz, q, gain_db)``. The operation is time-invariant;
+    it does not modulate the signal envelope like a compressor or de-esser.
+    """
+    x = np.asarray(audio, dtype=np.float64)
+    if x.ndim != 1 or x.size == 0 or not np.isfinite(x).all():
+        raise ValueError("Peaking EQ requires a non-empty finite mono signal.")
+    if sample_rate <= 0:
+        raise ValueError("Sample rate must be positive.")
+    from scipy.signal import sosfilt, sosfilt_zi
+
+    y = x.copy()
+    for center_hz, q, gain_db in bands:
+        if (not np.isfinite([center_hz, q, gain_db]).all()
+                or not 0.0 < center_hz < sample_rate / 2
+                or q <= 0.0 or not -12 <= gain_db <= 12):
+            raise ValueError("Each EQ band needs a valid center, positive Q and gain within ±12 dB.")
+        omega = 2.0 * np.pi * center_hz / sample_rate
+        amplitude = 10.0 ** (gain_db / 40.0)
+        alpha = np.sin(omega) / (2.0 * q)
+        cosine = np.cos(omega)
+        b = np.asarray([1.0 + alpha * amplitude, -2.0 * cosine,
+                        1.0 - alpha * amplitude])
+        a = np.asarray([1.0 + alpha / amplitude, -2.0 * cosine,
+                        1.0 - alpha / amplitude])
+        sos = np.asarray([[b[0] / a[0], b[1] / a[0], b[2] / a[0],
+                           1.0, a[1] / a[0], a[2] / a[0]]])
+        y, _ = sosfilt(sos, y, zi=sosfilt_zi(sos) * y[0])
+    return y.astype(np.float32)
+
+
 def apply_gentle_compression(
     audio: np.ndarray,
     sample_rate: int,

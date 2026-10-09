@@ -5,12 +5,13 @@ import unittest
 
 try:
     import numpy as np
-    from voxrefine.toneshape import apply_deesser, apply_gentle_compression, apply_shelves
+    from voxrefine.toneshape import apply_deesser, apply_gentle_compression, apply_peaking_eq, apply_shelves
 except ImportError:
     np = None
     apply_shelves = None
     apply_gentle_compression = None
     apply_deesser = None
+    apply_peaking_eq = None
 
 
 @unittest.skipUnless(importlib.util.find_spec("numpy") and importlib.util.find_spec("scipy"),
@@ -84,6 +85,15 @@ class ToneShelfTests(unittest.TestCase):
         self.assertAlmostEqual(quiet_gain, 0.0, delta=0.1)
         self.assertLess(loud_gain, -0.5)
         self.assertGreaterEqual(maximum, -1e-6)
+
+    def test_peaking_eq_has_stationary_expected_center_gain(self) -> None:
+        t = np.arange(self.rate * 2) / self.rate
+        source = np.sin(2 * np.pi * 3_500 * t).astype(np.float32)
+        result = apply_peaking_eq(source, self.rate, ((3_500, 0.65, -2.5),))
+        measured = self.steady_gain_db(source, result)
+        self.assertAlmostEqual(measured, -2.5, delta=0.1)
+        self.assertEqual(len(result), len(source))
+        self.assertTrue(np.isfinite(result).all())
 
 
 if __name__ == "__main__":

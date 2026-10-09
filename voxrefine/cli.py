@@ -71,13 +71,15 @@ def main(argv: list[str] | None = None) -> int:
     studio_resemble.add_argument("--nfe", choices=[16, 32, 64], type=int, default=64)
     studio_resemble.add_argument("--chunk-seconds", type=float, default=3.0,
                                  help="Model window; 3 s with 1 s overlap reduces GPU memory use.")
-    studio_resemble.add_argument("--tone", choices=["flat", "C", "soft-edges"], default="C",
-                                 help="C trims treble; soft-edges additionally trims sub-bass and upper treble")
-    studio_resemble.add_argument("--treble-trim-db", type=float, default=-1.5)
+    studio_resemble.add_argument("--tone", choices=["flat", "C", "soft-edges", "adobe-curve"], default="C",
+                                 help="adobe-curve is an experimental shared 5-band EQ learned from paired renders")
+    studio_resemble.add_argument("--treble-trim-db", type=float, default=-2.5)
+    studio_resemble.add_argument("--deesser", choices=["off", "gentle"], default="off",
+                                 help="Adaptive 4–10 kHz de-esser (gentle, capped at 3 dB).")
     studio_resemble.add_argument("--dynamics", choices=["off", "gentle"], default="gentle",
                                  help="Gentle soft-knee compression of loud phrases (default: gentle).")
-    studio_resemble.add_argument("--output-gain-db", type=float, default=-2.0,
-                                 help="Final output attenuation in dB (-12 to 0; default -2). Does not remove artifacts.")
+    studio_resemble.add_argument("--output-gain-db", type=float, default=-2.5,
+                                 help="Final output attenuation in dB (-12 to 0; default -2.5). Does not remove artifacts.")
     studio_resemble.add_argument(
         "--post-denoise-limit-db", type=float,
         help="Optional DeepFilterNet pass after Resemble; 18 dB is the gentle benchmarked challenger.",
@@ -173,6 +175,7 @@ def main(argv: list[str] | None = None) -> int:
                 upstream=args.upstream, model_dir=args.model_dir,
                 device=args.device, nfe=args.nfe, chunk_seconds=args.chunk_seconds, tone=args.tone,
                 treble_trim_db=args.treble_trim_db,
+                deesser=args.deesser,
                 dynamics=args.dynamics,
                 output_gain_db=args.output_gain_db,
                 post_denoise_limit_db=args.post_denoise_limit_db,
