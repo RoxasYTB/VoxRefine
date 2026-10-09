@@ -93,6 +93,7 @@
 - **Contrôle par cellules appariées :** le profil réduit la MAE dans cinq paires source/Adobe déjà traitées, mais empire le contrôle sec Naf de 1,55 dB. La médiane des six cellules baisse de 3,60 à 3,00 dB; l'effectif reste trop petit pour conclure à une généralisation.
 - **Préservation vocale :** aucune mesure objective de préservation phonétique/intelligibilité n'a été calculée sur toutes ces variantes d'EQ. Cette porte reste ouverte.
 - **AEC LocalVQE :** son rapport duplex est indépendant; cette branche ne doit pas être mélangée aux comparaisons Adobe de nettoyage de fichiers.
+- **Préservation après EQ (diagnostic in-sample) :** sur les trois paires RIR utilisées pour son ajustement, la MAE spectrale médiane baisse de 4,49 à 3,67 dB, mais le p10 de niveau des fenêtres vocales faibles se dégrade de 3,64 dB et l'enveloppe médiane ne gagne que 0,010. La courbe reste hors du profil par défaut; la panne d'enveloppe Naf persiste.
 
 ## Résultat réaliste attendu
 
