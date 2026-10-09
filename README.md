@@ -307,3 +307,28 @@ VoxRefine est sous licence MIT. Les moteurs gardent leurs propres licences :
 (BSD-3-Clause). Aucun binaire, poids ou enregistrement tiers n'est redistribué
 dans ce dépôt. Avant de les embarquer dans une application, vérifier également
 les conditions des poids retenus et joindre les notices requises.
+
+### Façonnage tonal après Resemble (expérimental)
+
+Le preset `--tone soft-edges` est une option locale pour atténuer le sous-grave
+et les aigus après le rendu Resemble : −3 dB sous 100 Hz et −2,5 dB au-dessus
+de 3,5 kHz, en plus du ton C. Il n'applique pas de gain de compensation. Le
+défaut reste `C`, car les mesures sur trois voix améliorent le spectre de deux
+références propres et le dégradent sur une. Sur un extrait bruité apparié à
+Adobe v2, l'erreur de courbe spectrale lissée passe de 3,92 à 3,02 dB; une
+coupe large sous 200 Hz l'aggrave. Ces valeurs sont descriptives et ne prouvent
+pas une qualité perceptuelle égale à Adobe.
+
+```sh
+python3 -m voxrefine studio-resemble input.wav output-soft-edges.wav \
+  --model-python .tools/resemble-venv/bin/python \
+  --upstream .tools/resemble-enhance-src \
+  --model-dir results/resemble-enhance-01/model/enhancer_stage2 \
+  --device auto --nfe 64 --chunk-seconds 3 --tone soft-edges
+```
+
+Protocole, définitions des mesures, empreintes, figures et CSV :
+[`adobe-tone-shaping-study-2026-10-09.md`](docs/benchmarking/adobe-tone-shaping-study-2026-10-09.md).
+Le sample source LibriVox est marqué Public Domain Mark (vérifier la juridiction);
+le rendu Adobe v2 et tous les fichiers audio restent locaux et ne sont pas
+publiés dans le dépôt.

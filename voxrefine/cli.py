@@ -10,6 +10,7 @@ from .engines import DeepFilterNet, Engine, RNNoise, clean
 from .gtcrn import GTCRN
 from .listening import create_blind_listening_set
 from .studio import benchmark_studio, enhance_studio, write_report
+from .backends.resemble import enhance_resemble
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -55,6 +56,34 @@ def main(argv: list[str] | None = None) -> int:
     studio_batch.add_argument("--threads", type=int, default=4)
     studio_batch.add_argument("--chunk-frames", type=int, default=2048)
     studio_batch.add_argument("--channel-policy", choices=["reject", "downmix", "first"], default="reject")
+    studio_resemble = commands.add_parser(
+        "studio-resemble", help="Run the optional offline Resemble Enhance Studio candidate."
+    )
+    studio_resemble.add_argument("input", type=Path)
+    studio_resemble.add_argument("output", type=Path)
+    studio_resemble.add_argument("--model-python", default="python3",
+                                 help="Python executable in the separately installed Resemble runtime.")
+    studio_resemble.add_argument("--upstream", type=Path, required=True,
+                                 help="Local Resemble source checkout; never downloaded.")
+    studio_resemble.add_argument("--model-dir", type=Path, required=True,
+                                 help="Local model directory with hparams.yaml and checkpoint; never downloaded.")
+    studio_resemble.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
+    studio_resemble.add_argument("--nfe", choices=[16, 32, 64], type=int, default=64)
+    studio_resemble.add_argument("--chunk-seconds", type=float, default=3.0,
+                                 help="Model window; 3 s with 1 s overlap reduces GPU memory use.")
+    studio_resemble.add_argument("--tone", choices=["flat", "C", "soft-edges"], default="C",
+                                 help="C trims treble; soft-edges additionally trims sub-bass and upper treble")
+    studio_resemble.add_argument("--treble-trim-db", type=float, default=-1.5)
+    studio_resemble.add_argument(
+        "--post-denoise-limit-db", type=float,
+        help="Optional DeepFilterNet pass after Resemble; 18 dB is the gentle benchmarked challenger.",
+    )
+    studio_resemble.add_argument("--deep-filter", default="deep-filter", metavar="EXECUTABLE",
+                                 help="DeepFilterNet CLI path (needed only with --post-denoise-limit-db).")
+    studio_resemble.add_argument("--channel-policy", choices=["reject", "downmix", "first"], default="reject")
+    studio_resemble.add_argument("--report", type=Path,
+                                 help="Optional new path for the JSON provenance report.")
+    studio_resemble.add_argument("--ffmpeg", default="ffmpeg", metavar="EXECUTABLE")
     for command in (cleanup, comparison, studio, studio_batch):
         command.add_argument("--deep-filter", default="deep-filter", metavar="EXECUTABLE")
         command.add_argument("--rnnoise-library", metavar="LIBRARY")
@@ -120,6 +149,28 @@ def main(argv: list[str] | None = None) -> int:
                 ffmpeg=args.ffmpeg,
                 attenuation_limit_db=100.0 if args.attenuation_limit_db is None else args.attenuation_limit_db,
                 device=args.device, threads=args.threads, chunk_frames=args.chunk_frames,
+                channel_policy=args.channel_policy,
+            )
+            if args.report:
+                report_path = write_report(report, args.report)
+                print(f"Provenance report: {report_path}")
+            print(json.dumps(report, indent=2, ensure_ascii=False))
+            return 0
+        if args.command == "studio-resemble":
+            if args.report:
+                report_target = args.report.expanduser().resolve()
+                output_target = args.output.expanduser().resolve()
+                if report_target == output_target:
+                    raise VoxRefineError("Audio output and provenance report must use different paths.")
+                if report_target.exists():
+                    raise VoxRefineError(f"Report already exists: {report_target}")
+            report = enhance_resemble(
+                args.input, args.output, python=args.model_python,
+                upstream=args.upstream, model_dir=args.model_dir,
+                device=args.device, nfe=args.nfe, chunk_seconds=args.chunk_seconds, tone=args.tone,
+                treble_trim_db=args.treble_trim_db,
+                post_denoise_limit_db=args.post_denoise_limit_db,
+                deep_filter=args.deep_filter, ffmpeg=args.ffmpeg,
                 channel_policy=args.channel_policy,
             )
             if args.report:
