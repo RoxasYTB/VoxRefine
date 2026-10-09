@@ -35,7 +35,8 @@ def enhance_resemble(
     nfe: int = 64,
     chunk_seconds: float = 3.0,
     tone: str = "C",
-    treble_trim_db: float = -1.5,
+    treble_trim_db: float = -2.5,
+    deesser: str = "off",
     dynamics: str = "gentle",
     output_gain_db: float = -2.0,
     post_denoise_limit_db: float | None = None,
@@ -62,6 +63,8 @@ def enhance_resemble(
         raise VoxRefineError("tone must be flat, C, or soft-edges.")
     if tone in {"C", "soft-edges"} and not -6 <= treble_trim_db <= 0:
         raise VoxRefineError("C/soft-edges base treble trim must be between -6 and 0 dB.")
+    if deesser not in {"off", "gentle"}:
+        raise VoxRefineError("deesser must be off or gentle.")
     if dynamics not in {"off", "gentle"}:
         raise VoxRefineError("dynamics must be off or gentle.")
     if not -12 <= output_gain_db <= 0:
@@ -100,7 +103,8 @@ def enhance_resemble(
         command = [python_exec, str(worker), "--input", str(raw_in), "--output", str(raw_out),
                    "--sample-count", str(samples), "--upstream", str(upstream), "--model-dir", str(model_dir),
                    "--device", device, "--nfe", str(nfe), "--tone", tone,
-                   "--treble-trim-db", str(treble_trim_db), "--dynamics", dynamics,
+                   "--treble-trim-db", str(treble_trim_db), "--deesser", deesser,
+                   "--dynamics", dynamics,
                    "--chunk-seconds", str(chunk_seconds)]
         started = time.perf_counter()
         try:
@@ -179,6 +183,7 @@ def enhance_resemble(
         "post_denoise_wall_seconds": post_elapsed,
         "final_output_gain_db": output_gain_db,
         "final_dynamics_mode": dynamics,
+        "final_deesser_mode": deesser,
         "total_wall_seconds_including_decode_encode_and_post_denoise": total_elapsed,
         "total_rtf_including_decode_encode_and_post_denoise": total_elapsed / (samples / 48000),
     }

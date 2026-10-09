@@ -15,7 +15,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from voxrefine.backends.resemble_compat import install_numpy_fsolve_compat
-from voxrefine.toneshape import apply_gentle_compression, apply_shelves
+from voxrefine.toneshape import apply_deesser, apply_gentle_compression, apply_shelves
 
 
 def sha256(path: Path) -> str:
@@ -37,7 +37,8 @@ def main() -> int:
     parser.add_argument("--nfe", type=int, choices=(16, 32, 64), default=64)
     parser.add_argument("--chunk-seconds", type=float, default=3.0)
     parser.add_argument("--tone", choices=("flat", "C", "soft-edges"), default="C")
-    parser.add_argument("--treble-trim-db", type=float, default=-1.5)
+    parser.add_argument("--treble-trim-db", type=float, default=-2.5)
+    parser.add_argument("--deesser", choices=("off", "gentle"), default="off")
     parser.add_argument("--dynamics", choices=("off", "gentle"), default="gentle")
     args = parser.parse_args()
 
@@ -175,12 +176,15 @@ def main() -> int:
         raise SystemExit("Resemble output contains non-finite samples.")
 
     if args.tone in {"C", "soft-edges"}:
-        cutoff = 5500.0
+        cutoff = 4000.0
         low = sosfiltfilt(butter(2, cutoff, btype="lowpass", fs=48000, output="sos"), enhanced)
         enhanced = (low + 10 ** (args.treble_trim_db / 20) * (enhanced-low)).astype(np.float32)
     if args.tone == "soft-edges":
         enhanced = apply_shelves(enhanced, 48000, bass_db=-3.0, bass_corner_hz=100.0,
                                  treble_db=-2.5, treble_corner_hz=3500.0)
+    deesser_reduction_db = 0.0
+    if args.deesser == "gentle":
+        enhanced, deesser_reduction_db = apply_deesser(enhanced, 48000)
     compressor_reduction_db = 0.0
     if args.dynamics == "gentle":
         enhanced, compressor_reduction_db = apply_gentle_compression(enhanced, 48000)
@@ -223,6 +227,17 @@ def main() -> int:
         } if args.dynamics == "gentle" else None),
         "treble_trim_db": args.treble_trim_db if args.tone in {"C", "soft-edges"} else 0.0,
         "tone_cutoff_hz": 5500 if args.tone in {"C", "soft-edges"} else None,
+        "deesser": args.deesser,
+        "deesser_config": ({
+            "band_hz": [4000, 10000],
+            "threshold_dbfs": -46.0,
+            "max_reduction_db": 3.0,
+            "ratio": 3.0,
+            "window_ms": 20.0,
+            "attack_ms": 6.0,
+            "release_ms": 90.0,
+            "max_observed_reduction_db": deesser_reduction_db,
+        } if args.deesser == "gentle" else None),
         "soft_edge_bass_trim_db": -3.0 if args.tone == "soft-edges" else 0.0,
         "soft_edge_bass_cutoff_hz": 100 if args.tone == "soft-edges" else None,
         "soft_edge_treble_trim_db": -2.5 if args.tone == "soft-edges" else 0.0,

@@ -110,3 +110,55 @@ def apply_gentle_compression(
         state = coefficient * state + (1.0 - coefficient) * target_gain
         gain[index] = state
     return (x * gain).astype(np.float32), float(np.max(-20.0 * np.log10(np.maximum(gain, 1e-12))))
+
+
+def apply_deesser(
+    audio: np.ndarray,
+    sample_rate: int,
+    *,
+    threshold_dbfs: float = -46.0,
+    max_reduction_db: float = 3.0,
+    ratio: float = 3.0,
+    low_hz: float = 4_000.0,
+    high_hz: float = 10_000.0,
+    window_ms: float = 20.0,
+    attack_ms: float = 6.0,
+    release_ms: float = 90.0,
+) -> tuple[np.ndarray, float]:
+    """Causal split-band de-esser; returns processed audio and max attenuation.
+
+    The threshold is an absolute dBFS level so streaming chunks share a stable
+    operating point. Tune it against representative material before changing
+    the product default.
+    """
+    x = np.asarray(audio, dtype=np.float64)
+    if x.ndim != 1 or x.size == 0 or not np.isfinite(x).all():
+        raise ValueError("De-essing requires a non-empty finite mono signal.")
+    if sample_rate <= 2 * high_hz or low_hz <= 0 or low_hz >= high_hz:
+        raise ValueError("De-esser band must be within Nyquist.")
+    if max_reduction_db < 0 or max_reduction_db > 12 or ratio < 1:
+        raise ValueError("Invalid de-esser reduction or ratio.")
+    from scipy.ndimage import uniform_filter1d
+    from scipy.signal import butter, sosfilt
+
+    band_sos = butter(2, [low_hz, high_hz], btype="bandpass", fs=sample_rate, output="sos")
+    high_band = sosfilt(band_sos, x)
+    window = max(1, round(sample_rate * window_ms / 1000))
+    envelope = np.sqrt(uniform_filter1d(high_band * high_band, size=window, mode="nearest") + 1e-16)
+    level_db = 20.0 * np.log10(np.maximum(envelope, 1e-12))
+    over = np.maximum(level_db - threshold_dbfs, 0.0)
+    reduction_db = np.minimum(max_reduction_db, over * (1.0 - 1.0 / ratio))
+    target = 10.0 ** (-reduction_db / 20.0)
+    gain = np.empty_like(target)
+    state = 1.0
+    attack = np.exp(-1.0 / (sample_rate * attack_ms / 1000.0))
+    release = np.exp(-1.0 / (sample_rate * release_ms / 1000.0))
+    for index, target_gain in enumerate(target):
+        coefficient = attack if target_gain < state else release
+        state = coefficient * state + (1.0 - coefficient) * target_gain
+        gain[index] = state
+    # Blend only the attenuation envelope back into the original band. This
+    # avoids phase cancellation/boost from subtracting a causal bandpass.
+    processed = x * (1.0 - (1.0 - gain) * np.clip(np.abs(high_band) /
+                                                  (envelope + 1e-12), 0.0, 1.0))
+    return processed.astype(np.float32), float(np.max(reduction_db))
