@@ -71,8 +71,8 @@ def main(argv: list[str] | None = None) -> int:
     studio_resemble.add_argument("--nfe", choices=[16, 32, 64], type=int, default=64)
     studio_resemble.add_argument("--chunk-seconds", type=float, default=3.0,
                                  help="Model window; 3 s with 1 s overlap reduces GPU memory use.")
-    studio_resemble.add_argument("--tone", choices=["flat", "C", "soft-edges", "adobe-curve"], default="C",
-                                 help="adobe-curve is an experimental shared 5-band EQ learned from paired renders")
+    studio_resemble.add_argument("--tone", choices=["flat", "C", "soft-edges"], default="C",
+                                 help="C trims treble; soft-edges also trims sub-bass")
     studio_resemble.add_argument("--treble-trim-db", type=float, default=-2.5)
     studio_resemble.add_argument("--deesser", choices=["off", "gentle"], default="off",
                                  help="Adaptive 4–10 kHz de-esser (gentle, capped at 3 dB).")

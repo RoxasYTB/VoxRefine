@@ -15,7 +15,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from voxrefine.backends.resemble_compat import install_numpy_fsolve_compat
-from voxrefine.toneshape import apply_deesser, apply_gentle_compression, apply_peaking_eq, apply_shelves
+from voxrefine.toneshape import apply_deesser, apply_gentle_compression, apply_shelves
 
 
 def sha256(path: Path) -> str:
@@ -36,7 +36,7 @@ def main() -> int:
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument("--nfe", type=int, choices=(16, 32, 64), default=64)
     parser.add_argument("--chunk-seconds", type=float, default=3.0)
-    parser.add_argument("--tone", choices=("flat", "C", "soft-edges", "adobe-curve"), default="C")
+    parser.add_argument("--tone", choices=("flat", "C", "soft-edges"), default="C")
     parser.add_argument("--treble-trim-db", type=float, default=-2.5)
     parser.add_argument("--deesser", choices=("off", "gentle"), default="off")
     parser.add_argument("--dynamics", choices=("off", "gentle"), default="gentle")
@@ -177,18 +177,6 @@ def main() -> int:
     if args.tone in {"C", "soft-edges"}:
         enhanced = apply_shelves(enhanced, 48000, treble_db=args.treble_trim_db,
                                  treble_corner_hz=4000.0)
-    elif args.tone == "adobe-curve":
-        # The paired training renders used the earlier C finishing trim before
-        # the shared curve fit; keep that baseline before applying the fit.
-        enhanced = apply_shelves(enhanced, 48000, treble_db=-1.5,
-                                 treble_corner_hz=5500.0)
-        enhanced = apply_peaking_eq(enhanced, 48000, (
-            (180.0, 0.65, 1.67),
-            (500.0, 0.65, 0.16),
-            (1500.0, 0.65, -1.35),
-            (3500.0, 0.65, -2.50),
-            (8000.0, 0.65, -2.50),
-        ))
     if args.tone == "soft-edges":
         enhanced = apply_shelves(enhanced, 48000, bass_db=-3.0, bass_corner_hz=100.0,
                                  treble_db=-2.5, treble_corner_hz=3500.0)
@@ -237,15 +225,6 @@ def main() -> int:
         } if args.dynamics == "gentle" else None),
         "treble_trim_db": args.treble_trim_db if args.tone in {"C", "soft-edges"} else 0.0,
         "tone_cutoff_hz": 4000 if args.tone in {"C", "soft-edges"} else None,
-        "adobe_curve_eq_bands": ([
-            {"center_hz": 180.0, "q": 0.65, "gain_db": 1.67},
-            {"center_hz": 500.0, "q": 0.65, "gain_db": 0.16},
-            {"center_hz": 1500.0, "q": 0.65, "gain_db": -1.35},
-            {"center_hz": 3500.0, "q": 0.65, "gain_db": -2.50},
-            {"center_hz": 8000.0, "q": 0.65, "gain_db": -2.50},
-        ] if args.tone == "adobe-curve" else None),
-        "adobe_curve_base_trim": ({"treble_db": -1.5, "corner_hz": 5500.0}
-                                  if args.tone == "adobe-curve" else None),
         "deesser": args.deesser,
         "deesser_config": ({
             "band_hz": [4000, 10000],

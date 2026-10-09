@@ -76,4 +76,4 @@ Held-out Naf dry pair, where the EQ worsens the mean curve distance:
 .tools/resemble-venv/bin/python scripts/benchmarks/universal_enhancer/fit_adobe_curve_eq.py
 ```
 
-Raw measurements and fold scores: `results/adobe-curve-eq-2026-10-09/report.json`, `metrics.csv`, and `curves.csv`. The profile is available for local experiments with `studio-resemble --tone adobe-curve`; `C` remains the default.
+Raw measurements and fold scores: `results/adobe-curve-eq-2026-10-09/report.json`, `metrics.csv`, and `curves.csv`. The profile was removed from the product CLI after the listening result and speech-preservation screen; historical renders remain research artifacts only. See [the regression and alternative-path report](adobe-speech-preservation-alternative-2026-10-09.md).

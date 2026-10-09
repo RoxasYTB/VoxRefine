@@ -59,8 +59,8 @@ def enhance_resemble(
         raise VoxRefineError("NFE must be one of 16, 32, or 64.")
     if not 2.0 <= chunk_seconds <= 30.0:
         raise VoxRefineError("chunk_seconds must be between 2 and 30 seconds.")
-    if tone not in {"flat", "C", "soft-edges", "adobe-curve"}:
-        raise VoxRefineError("tone must be flat, C, soft-edges, or adobe-curve.")
+    if tone not in {"flat", "C", "soft-edges"}:
+        raise VoxRefineError("tone must be flat, C, or soft-edges.")
     if tone in {"C", "soft-edges"} and not -6 <= treble_trim_db <= 0:
         raise VoxRefineError("C/soft-edges base treble trim must be between -6 and 0 dB.")
     if deesser not in {"off", "gentle"}:
