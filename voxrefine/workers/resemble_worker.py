@@ -46,7 +46,6 @@ def main() -> int:
     import soundfile as sf
     import torch
     import torchaudio.functional as AF
-    from scipy.signal import butter, sosfiltfilt
     from scipy.signal import resample_poly
     import pyloudnorm as pyln
 
@@ -176,9 +175,8 @@ def main() -> int:
         raise SystemExit("Resemble output contains non-finite samples.")
 
     if args.tone in {"C", "soft-edges"}:
-        cutoff = 4000.0
-        low = sosfiltfilt(butter(2, cutoff, btype="lowpass", fs=48000, output="sos"), enhanced)
-        enhanced = (low + 10 ** (args.treble_trim_db / 20) * (enhanced-low)).astype(np.float32)
+        enhanced = apply_shelves(enhanced, 48000, treble_db=args.treble_trim_db,
+                                 treble_corner_hz=4000.0)
     if args.tone == "soft-edges":
         enhanced = apply_shelves(enhanced, 48000, bass_db=-3.0, bass_corner_hz=100.0,
                                  treble_db=-2.5, treble_corner_hz=3500.0)
@@ -226,7 +224,7 @@ def main() -> int:
             "max_gain_reduction_db": compressor_reduction_db,
         } if args.dynamics == "gentle" else None),
         "treble_trim_db": args.treble_trim_db if args.tone in {"C", "soft-edges"} else 0.0,
-        "tone_cutoff_hz": 5500 if args.tone in {"C", "soft-edges"} else None,
+        "tone_cutoff_hz": 4000 if args.tone in {"C", "soft-edges"} else None,
         "deesser": args.deesser,
         "deesser_config": ({
             "band_hz": [4000, 10000],
