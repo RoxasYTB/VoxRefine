@@ -1,0 +1,306 @@
+{
+  "protocol": "12 speaker-disjoint train-clean-360 voices; full successive sorted same-speaker utterance-file pairs + inserted controlled 800 ms digital silence; dry-only 20 ms RMS/10 ms hop activity threshold = 2% of phrase peak; t0 is last active-frame end of phrase 1; score 50\u2013150/150\u2013300/300\u2013600 ms after t0, retain 200 ms guard before phrase 2; full sequence and full RIR convolution tail; dataset=Aachen Impulse Response Database AIR v1.4; selected rooms \u00d7 preselected shortest/longest source-mic distances; mono 16 kHz; training-domain early-path peak normalization to unit gain (not SPL calibration); common dry/wet scale; no output normalization; tail reference is reverberant-input energy on phrase-1 clean-active mask. The dry-model floor is recorded relative to dry speech and also expressed against the same fixed wet-speech reference for censoring. Floors are never subtracted; paired A/B analysis uses the more conservative floor plus 3 dB.",
+  "speaker_count": 12,
+  "room_count": 4,
+  "rir_count": 8,
+  "case_count": 384,
+  "models": {
+    "weak_over_synth": {
+      "checkpoint": ".tools/compact-dereverb/training-weak-over/checkpoints/best-dev-weak-over.pt",
+      "sha256": "31e0b7b01224103c58bd5e4453005ad5065a710f71a3d78106c0976662434a40",
+      "parameters": 555922,
+      "median_forward_seconds_per_case": 0.09441755601437762,
+      "median_input_duration_seconds": 29.757062500000004,
+      "median_rtf": 0.003201011102736505
+    },
+    "measured_mix": {
+      "checkpoint": ".tools/compact-dereverb/training-measured-mix-20261009/checkpoints/best-dev.pt",
+      "sha256": "c49ccf72b4874c233548d14e74a02c6ac66b1f5f653762a18986e60499aa31b3",
+      "parameters": 555922,
+      "median_forward_seconds_per_case": 0.09403044101782143,
+      "median_input_duration_seconds": 29.757062500000004,
+      "median_rtf": 0.003166835268258078
+    }
+  },
+  "tail_reduction_input_to_output_db": {
+    "weak_over_synth": {
+      "300_600": {
+        "median_input_to_output_reduction_db_uncensored": 3.2245206123409442,
+        "p10_db_uncensored": 0.3824129738933536,
+        "uncensored_count": 93,
+        "censored_count": 3,
+        "total_count": 96
+      },
+      "50_150": {
+        "median_input_to_output_reduction_db_uncensored": 7.105174612719571,
+        "p10_db_uncensored": 0.5314573070937753,
+        "uncensored_count": 74,
+        "censored_count": 22,
+        "total_count": 96
+      },
+      "150_300": {
+        "median_input_to_output_reduction_db_uncensored": 4.736233913424161,
+        "p10_db_uncensored": 0.4656714514262329,
+        "uncensored_count": 76,
+        "censored_count": 20,
+        "total_count": 96
+      }
+    },
+    "measured_mix": {
+      "300_600": {
+        "median_input_to_output_reduction_db_uncensored": 7.869001620714707,
+        "p10_db_uncensored": 2.100941407804675,
+        "uncensored_count": 77,
+        "censored_count": 19,
+        "total_count": 96
+      },
+      "50_150": {
+        "median_input_to_output_reduction_db_uncensored": 10.725557130120754,
+        "p10_db_uncensored": 2.5407803872054404,
+        "uncensored_count": 69,
+        "censored_count": 27,
+        "total_count": 96
+      },
+      "150_300": {
+        "median_input_to_output_reduction_db_uncensored": 8.829612352152623,
+        "p10_db_uncensored": 2.4573159746179276,
+        "uncensored_count": 66,
+        "censored_count": 30,
+        "total_count": 96
+      }
+    }
+  },
+  "paired_weak_over_minus_baseline_db": {
+    "150_300": {
+      "measured_mix_minus_weak_over_synth_median_db": 2.1293774761565514,
+      "p10_db": -1.8929810795243112,
+      "paired_uncensored_speaker_room_count": 35,
+      "paired_uncensored_room_count": 4,
+      "candidate_reaches_floor_when_baseline_measurable_count": 8,
+      "room_count": 4
+    },
+    "300_600": {
+      "measured_mix_minus_weak_over_synth_median_db": 3.473762561648669,
+      "p10_db": 0.9852035915399349,
+      "paired_uncensored_speaker_room_count": 42,
+      "paired_uncensored_room_count": 4,
+      "candidate_reaches_floor_when_baseline_measurable_count": 6,
+      "room_count": 4
+    }
+  },
+  "training_domain_rir_scalar_applied": {
+    "min": 3.9328777501894097,
+    "median": 5.4713138861044825,
+    "max": 12.034494087199285,
+    "per_rir": {
+      ".tools/compact-dereverb/data/air/extracted/booth/MicID01/short_distance_50cm/RIR/air_binaural_booth_0_0_1.wav": 3.9328777501894097,
+      ".tools/compact-dereverb/data/air/extracted/booth/MicID01/long_distance_150cm/RIR/air_binaural_booth_0_0_3.wav": 5.221962775357957,
+      ".tools/compact-dereverb/data/air/extracted/lecture/MicID01/short_distance_225cm/RIR/air_binaural_lecture_0_0_1.wav": 5.881649154346341,
+      ".tools/compact-dereverb/data/air/extracted/lecture/MicID01/long_distance_1020cm/RIR/air_binaural_lecture_0_0_6.wav": 12.034494087199285,
+      ".tools/compact-dereverb/data/air/extracted/meeting/MicID01/short_distance_145cm/RIR/air_binaural_meeting_0_0_1.wav": 5.413129695330256,
+      ".tools/compact-dereverb/data/air/extracted/meeting/MicID01/long_distance_280cm/RIR/air_binaural_meeting_0_0_5.wav": 6.800169910861649,
+      ".tools/compact-dereverb/data/air/extracted/office/MicID01/short_distance_100cm/RIR/air_binaural_office_0_0_1.wav": 4.195319267262677,
+      ".tools/compact-dereverb/data/air/extracted/office/MicID01/long_distance_300cm/RIR/air_binaural_office_0_0_3.wav": 5.52949807687871
+    }
+  },
+  "speech": {
+    "weak_over_synth": {
+      "weak_gain_clipwise_p50_median_db": 5.311271104885822,
+      "weak_gain_clipwise_p50_p90_db": 12.412814981992046,
+      "weak_fraction_over_6db_median": 0.4092835284196681,
+      "active_gain_clipwise_p50_median_db": 6.029259827394506,
+      "onset_p10_clipwise_median_db": 2.240261576416665,
+      "spectral_mae_clipwise_median_db": 8.022364255812134,
+      "dry_control_active_gain_median_db": -0.41466854945053444,
+      "dry_control_onset_p10_median_db": -0.5102260514369357
+    },
+    "measured_mix": {
+      "weak_gain_clipwise_p50_median_db": 1.4674207431583155,
+      "weak_gain_clipwise_p50_p90_db": 7.717752047486867,
+      "weak_fraction_over_6db_median": 0.1098969140071798,
+      "active_gain_clipwise_p50_median_db": -0.39760596891052047,
+      "onset_p10_clipwise_median_db": -4.599970701406515,
+      "spectral_mae_clipwise_median_db": 7.44548175523971,
+      "dry_control_active_gain_median_db": -1.1235468670831157,
+      "dry_control_onset_p10_median_db": -1.438640454320541
+    }
+  },
+  "room_censoring": {
+    "booth": {
+      "weak_over_synth": {
+        "50_150": {
+          "censored": 5,
+          "total": 24
+        },
+        "150_300": {
+          "censored": 6,
+          "total": 24
+        },
+        "300_600": {
+          "censored": 1,
+          "total": 24
+        }
+      },
+      "measured_mix": {
+        "50_150": {
+          "censored": 9,
+          "total": 24
+        },
+        "150_300": {
+          "censored": 9,
+          "total": 24
+        },
+        "300_600": {
+          "censored": 5,
+          "total": 24
+        }
+      }
+    },
+    "lecture": {
+      "weak_over_synth": {
+        "50_150": {
+          "censored": 2,
+          "total": 24
+        },
+        "150_300": {
+          "censored": 4,
+          "total": 24
+        },
+        "300_600": {
+          "censored": 1,
+          "total": 24
+        }
+      },
+      "measured_mix": {
+        "50_150": {
+          "censored": 3,
+          "total": 24
+        },
+        "150_300": {
+          "censored": 4,
+          "total": 24
+        },
+        "300_600": {
+          "censored": 2,
+          "total": 24
+        }
+      }
+    },
+    "meeting": {
+      "weak_over_synth": {
+        "50_150": {
+          "censored": 9,
+          "total": 24
+        },
+        "150_300": {
+          "censored": 5,
+          "total": 24
+        },
+        "300_600": {
+          "censored": 0,
+          "total": 24
+        }
+      },
+      "measured_mix": {
+        "50_150": {
+          "censored": 9,
+          "total": 24
+        },
+        "150_300": {
+          "censored": 10,
+          "total": 24
+        },
+        "300_600": {
+          "censored": 6,
+          "total": 24
+        }
+      }
+    },
+    "office": {
+      "weak_over_synth": {
+        "50_150": {
+          "censored": 6,
+          "total": 24
+        },
+        "150_300": {
+          "censored": 5,
+          "total": 24
+        },
+        "300_600": {
+          "censored": 1,
+          "total": 24
+        }
+      },
+      "measured_mix": {
+        "50_150": {
+          "censored": 6,
+          "total": 24
+        },
+        "150_300": {
+          "censored": 7,
+          "total": 24
+        },
+        "300_600": {
+          "censored": 6,
+          "total": 24
+        }
+      }
+    }
+  },
+  "rooms": {
+    "booth": {
+      "weak_over_synth": {
+        "300_600": 0.4704531697228801,
+        "50_150": 0.5686283563266735,
+        "150_300": 0.483803185711841
+      },
+      "measured_mix": {
+        "300_600": 2.618824964129078,
+        "50_150": 2.562278347782598,
+        "150_300": 2.464198840261158
+      }
+    },
+    "lecture": {
+      "weak_over_synth": {
+        "300_600": 6.701644264221935,
+        "50_150": 13.600180073495036,
+        "150_300": 11.120576414057815
+      },
+      "measured_mix": {
+        "300_600": 11.65526827340534,
+        "50_150": 17.017262092108087,
+        "150_300": 12.97171462454898
+      }
+    },
+    "meeting": {
+      "weak_over_synth": {
+        "300_600": 2.688302712498238,
+        "50_150": 6.221038017200526,
+        "150_300": 3.310591028306245
+      },
+      "measured_mix": {
+        "300_600": 5.820370277723979,
+        "50_150": 7.05856171154765,
+        "150_300": 6.035217630818886
+      }
+    },
+    "office": {
+      "weak_over_synth": {
+        "300_600": 4.719545851503304,
+        "50_150": 11.574146667709522,
+        "150_300": 10.624312989153278
+      },
+      "measured_mix": {
+        "300_600": 9.392587753767987,
+        "50_150": 13.819476928731197,
+        "150_300": 10.944413676672522
+      }
+    }
+  },
+  "limitations": [
+    "This is an external measured-RIR evaluation; training provenance is recorded per checkpoint.",
+    "This inserted-pause screen does not measure natural pauses or conversational timing.",
+    "Linear convolution does not model real microphone noise, nonlinear playback/capture, or motion.",
+    "Audio and derived renders stay local; the report contains metrics only."
+  ]
+}

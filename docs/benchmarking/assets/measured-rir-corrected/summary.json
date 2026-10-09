@@ -1,0 +1,526 @@
+{
+  "protocol": "12 unseen train-clean-360 speakers; full successive sorted same-speaker utterance-file pairs + inserted controlled 800 ms digital silence; dry-only 20 ms RMS/10 ms hop activity threshold = 2% of phrase peak; t0 is last active-frame end of phrase 1; score 50\u2013150/150\u2013300/300\u2013600 ms after t0, retain 200 ms guard before phrase 2; full sequence and full RIR convolution tail; selected BUT ReverbDB rooms \u00d7 preselected shortest/longest source-mic distances; mono 16 kHz; training-domain early-path peak normalization to unit gain (not SPL calibration); common dry/wet scale; no output normalization; tail reference is reverberant-input energy on phrase-1 clean-active mask. The dry-model floor is recorded relative to dry speech and also expressed against the same fixed wet-speech reference for censoring. Floors are never subtracted; paired A/B analysis uses the more conservative floor plus 3 dB.",
+  "speaker_count": 12,
+  "room_count": 9,
+  "rir_count": 18,
+  "case_count": 864,
+  "models": {
+    "baseline_synth": {
+      "checkpoint": ".tools/compact-dereverb/training-rtail/checkpoints/best-dev.pt",
+      "sha256": "1d5af56664350c2963f1ec0ded4e0c57dafc689a60ef8eb93c90cfe6721202f8",
+      "parameters": 555922,
+      "median_forward_seconds_per_case": 0.09389379702042788,
+      "median_input_duration_seconds": 30.34746875,
+      "median_rtf": 0.0031063306718511685
+    },
+    "weak_over_synth": {
+      "checkpoint": ".tools/compact-dereverb/training-weak-over/checkpoints/best-dev-weak-over.pt",
+      "sha256": "31e0b7b01224103c58bd5e4453005ad5065a710f71a3d78106c0976662434a40",
+      "parameters": 555922,
+      "median_forward_seconds_per_case": 0.09360714192735031,
+      "median_input_duration_seconds": 30.34746875,
+      "median_rtf": 0.003102400937424938
+    }
+  },
+  "tail_reduction_input_to_output_db": {
+    "baseline_synth": {
+      "50_150": {
+        "median_input_to_output_reduction_db_uncensored": 9.205182637153598,
+        "p10_db_uncensored": 2.742951024315359,
+        "uncensored_count": 214,
+        "censored_count": 2,
+        "total_count": 216
+      },
+      "150_300": {
+        "median_input_to_output_reduction_db_uncensored": 7.784657267296055,
+        "p10_db_uncensored": 1.9830558251828097,
+        "uncensored_count": 214,
+        "censored_count": 2,
+        "total_count": 216
+      },
+      "300_600": {
+        "median_input_to_output_reduction_db_uncensored": 4.8550319748977255,
+        "p10_db_uncensored": 1.4040067127513791,
+        "uncensored_count": 216,
+        "censored_count": 0,
+        "total_count": 216
+      }
+    },
+    "weak_over_synth": {
+      "50_150": {
+        "median_input_to_output_reduction_db_uncensored": 12.318893144102503,
+        "p10_db_uncensored": 5.519813314704853,
+        "uncensored_count": 211,
+        "censored_count": 5,
+        "total_count": 216
+      },
+      "150_300": {
+        "median_input_to_output_reduction_db_uncensored": 8.78378071007411,
+        "p10_db_uncensored": 3.7721568055183226,
+        "uncensored_count": 212,
+        "censored_count": 4,
+        "total_count": 216
+      },
+      "300_600": {
+        "median_input_to_output_reduction_db_uncensored": 5.709136989184591,
+        "p10_db_uncensored": 2.066273016423812,
+        "uncensored_count": 216,
+        "censored_count": 0,
+        "total_count": 216
+      }
+    }
+  },
+  "paired_weak_over_minus_baseline_db": {
+    "150_300": {
+      "weak_over_synth_minus_baseline_synth_median_db": 0.7764009542570038,
+      "p10_db": -1.4155015999205631,
+      "paired_uncensored_speaker_room_count": 108,
+      "paired_uncensored_room_count": 9,
+      "candidate_reaches_floor_when_baseline_measurable_count": 0,
+      "room_count": 9
+    },
+    "300_600": {
+      "weak_over_synth_minus_baseline_synth_median_db": 0.5310966787530997,
+      "p10_db": -1.1822927586994598,
+      "paired_uncensored_speaker_room_count": 108,
+      "paired_uncensored_room_count": 9,
+      "candidate_reaches_floor_when_baseline_measurable_count": 0,
+      "room_count": 9
+    }
+  },
+  "training_domain_rir_scalar_applied": {
+    "min": 1.000030518509476,
+    "median": 1.8472201903164245,
+    "max": 6.79411154882853,
+    "per_rir": {
+      ".tools/compact-dereverb/data/but-reverbdb/extracted/Hotel_SkalskyDvur_ConferenceRoom2/MicID01/SpkID01_20170906_S/09/RIR/IR_sweep_15s_45Hzto22kHz_FS16kHz.v00.wav": 1.000030518509476,
+      ".tools/compact-dereverb/data/but-reverbdb/extracted/Hotel_SkalskyDvur_ConferenceRoom2/MicID01/SpkID01_20170906_S/24/RIR/IR_sweep_15s_45Hzto22kHz_FS16kHz.v00.wav": 1.2016575598665151,
+      ".tools/compact-dereverb/data/but-reverbdb/extracted/Hotel_SkalskyDvur_Room112/MicID01/SpkID02_20170906_S/12/RIR/IR_sweep_15s_45Hzto22kHz_FS16kHz.v00.wav": 1.1466965285554311,
+      ".tools/compact-dereverb/data/but-reverbdb/extracted/Hotel_SkalskyDvur_Room112/MicID01/SpkID05_20170906_S/26/RIR/IR_sweep_15s_45Hzto22kHz_FS16kHz.v00.wav": 1.1672009688679916,
+      ".tools/compact-dereverb/data/but-reverbdb/extracted/VUT_FIT_C236/MicID01/SpkID09_20190503_S/02/RIR/IR_sweep_15s_45Hzto22kHz_FS16kHz.v00.wav": 5.338546757901597,
+      ".tools/compact-dereverb/data/but-reverbdb/extracted/VUT_FIT_C236/MicID01/SpkID10_20190503_S/20/RIR/IR_sweep_15s_45Hzto22kHz_FS16kHz.v00.wav": 2.871866783523225,
+      ".tools/compact-dereverb/data/but-reverbdb/extracted/VUT_FIT_D105/MicID01/SpkID03_20170901_S/14/RIR/IR_sweep_15s_45Hzto22kHz_FS16kHz.v00.wav": 1.0859680519652681,
+      ".tools/compact-dereverb/data/but-reverbdb/extracted/VUT_FIT_D105/MicID01/SpkID06_20170901_S/26/RIR/IR_sweep_15s_45Hzto22kHz_FS16kHz.v00.wav": 1.7902097902097902,
+      ".tools/compact-dereverb/data/but-reverbdb/extracted/VUT_FIT_E112/MicID01/SpkID03_20170824_S/28/RIR/IR_sweep_15s_45Hzto22kHz_FS16kHz.v00.wav": 1.2518815663801337,
+      ".tools/compact-dereverb/data/but-reverbdb/extracted/VUT_FIT_E112/MicID01/SpkID02_20170824_S/09/RIR/IR_sweep_15s_45Hzto22kHz_FS16kHz.v00.wav": 1.904230590423059,
+      ".tools/compact-dereverb/data/but-reverbdb/extracted/VUT_FIT_L207/MicID01/SpkID01_20171223_S/09/RIR/IR_sweep_15s_45Hzto22kHz_FS16kHz.v00.wav": 6.79411154882853,
+      ".tools/compact-dereverb/data/but-reverbdb/extracted/VUT_FIT_L207/MicID01/SpkID04_20171229_S/19/RIR/IR_sweep_15s_45Hzto22kHz_FS16kHz.v00.wav": 1.9325312573720217,
+      ".tools/compact-dereverb/data/but-reverbdb/extracted/VUT_FIT_L212/MicID01/SpkID05_20170820_S/22/RIR/IR_sweep_15s_45Hzto22kHz_FS16kHz.v00.wav": 1.5494609419330434,
+      ".tools/compact-dereverb/data/but-reverbdb/extracted/VUT_FIT_L212/MicID01/SpkID05_20170820_S/11/RIR/IR_sweep_15s_45Hzto22kHz_FS16kHz.v00.wav": 2.248850456385972,
+      ".tools/compact-dereverb/data/but-reverbdb/extracted/VUT_FIT_L227/MicID01/SpkID02_20180105_S/13/RIR/IR_sweep_15s_45Hzto22kHz_FS16kHz.v00.wav": 1.0920118638984238,
+      ".tools/compact-dereverb/data/but-reverbdb/extracted/VUT_FIT_L227/MicID01/SpkID03_20180105_S/31/RIR/IR_sweep_15s_45Hzto22kHz_FS16kHz.v00.wav": 4.548584119933371,
+      ".tools/compact-dereverb/data/but-reverbdb/extracted/VUT_FIT_Q301/MicID01/SpkID01_20170910_T/01/RIR/IR_sweep_15s_45Hzto22kHz_FS16kHz.v00.wav": 4.514742353265363,
+      ".tools/compact-dereverb/data/but-reverbdb/extracted/VUT_FIT_Q301/MicID01/SpkID05_20170915_S/26/RIR/IR_sweep_15s_45Hzto22kHz_FS16kHz.v00.wav": 2.1306977046622015
+    }
+  },
+  "speech": {
+    "baseline_synth": {
+      "weak_gain_clipwise_p50_median_db": 23.24502807501251,
+      "weak_gain_clipwise_p50_p90_db": 38.35549797803296,
+      "weak_fraction_over_6db_median": 0.9940944881889764,
+      "active_gain_clipwise_p50_median_db": 20.707358450160015,
+      "onset_p10_clipwise_median_db": 10.279778875829528,
+      "spectral_mae_clipwise_median_db": 17.010112855361648,
+      "dry_control_active_gain_median_db": -0.5091396219478881,
+      "dry_control_onset_p10_median_db": -0.9269008985057985
+    },
+    "weak_over_synth": {
+      "weak_gain_clipwise_p50_median_db": 20.3935885586072,
+      "weak_gain_clipwise_p50_p90_db": 35.42171629644783,
+      "weak_fraction_over_6db_median": 0.9880759674747779,
+      "active_gain_clipwise_p50_median_db": 18.818484671334048,
+      "onset_p10_clipwise_median_db": 9.208177239717646,
+      "spectral_mae_clipwise_median_db": 16.693266243836884,
+      "dry_control_active_gain_median_db": -0.9279169652186023,
+      "dry_control_onset_p10_median_db": -1.1018854082549598
+    }
+  },
+  "room_censoring": {
+    "Hotel_SkalskyDvur_ConferenceRoom2": {
+      "baseline_synth": {
+        "50_150": {
+          "censored": 0,
+          "total": 24
+        },
+        "150_300": {
+          "censored": 0,
+          "total": 24
+        },
+        "300_600": {
+          "censored": 0,
+          "total": 24
+        }
+      },
+      "weak_over_synth": {
+        "50_150": {
+          "censored": 0,
+          "total": 24
+        },
+        "150_300": {
+          "censored": 0,
+          "total": 24
+        },
+        "300_600": {
+          "censored": 0,
+          "total": 24
+        }
+      }
+    },
+    "Hotel_SkalskyDvur_Room112": {
+      "baseline_synth": {
+        "50_150": {
+          "censored": 0,
+          "total": 24
+        },
+        "150_300": {
+          "censored": 0,
+          "total": 24
+        },
+        "300_600": {
+          "censored": 0,
+          "total": 24
+        }
+      },
+      "weak_over_synth": {
+        "50_150": {
+          "censored": 0,
+          "total": 24
+        },
+        "150_300": {
+          "censored": 0,
+          "total": 24
+        },
+        "300_600": {
+          "censored": 0,
+          "total": 24
+        }
+      }
+    },
+    "VUT_FIT_C236": {
+      "baseline_synth": {
+        "50_150": {
+          "censored": 0,
+          "total": 24
+        },
+        "150_300": {
+          "censored": 0,
+          "total": 24
+        },
+        "300_600": {
+          "censored": 0,
+          "total": 24
+        }
+      },
+      "weak_over_synth": {
+        "50_150": {
+          "censored": 0,
+          "total": 24
+        },
+        "150_300": {
+          "censored": 0,
+          "total": 24
+        },
+        "300_600": {
+          "censored": 0,
+          "total": 24
+        }
+      }
+    },
+    "VUT_FIT_D105": {
+      "baseline_synth": {
+        "50_150": {
+          "censored": 0,
+          "total": 24
+        },
+        "150_300": {
+          "censored": 0,
+          "total": 24
+        },
+        "300_600": {
+          "censored": 0,
+          "total": 24
+        }
+      },
+      "weak_over_synth": {
+        "50_150": {
+          "censored": 0,
+          "total": 24
+        },
+        "150_300": {
+          "censored": 0,
+          "total": 24
+        },
+        "300_600": {
+          "censored": 0,
+          "total": 24
+        }
+      }
+    },
+    "VUT_FIT_E112": {
+      "baseline_synth": {
+        "50_150": {
+          "censored": 0,
+          "total": 24
+        },
+        "150_300": {
+          "censored": 0,
+          "total": 24
+        },
+        "300_600": {
+          "censored": 0,
+          "total": 24
+        }
+      },
+      "weak_over_synth": {
+        "50_150": {
+          "censored": 0,
+          "total": 24
+        },
+        "150_300": {
+          "censored": 0,
+          "total": 24
+        },
+        "300_600": {
+          "censored": 0,
+          "total": 24
+        }
+      }
+    },
+    "VUT_FIT_L207": {
+      "baseline_synth": {
+        "50_150": {
+          "censored": 0,
+          "total": 24
+        },
+        "150_300": {
+          "censored": 1,
+          "total": 24
+        },
+        "300_600": {
+          "censored": 0,
+          "total": 24
+        }
+      },
+      "weak_over_synth": {
+        "50_150": {
+          "censored": 3,
+          "total": 24
+        },
+        "150_300": {
+          "censored": 2,
+          "total": 24
+        },
+        "300_600": {
+          "censored": 0,
+          "total": 24
+        }
+      }
+    },
+    "VUT_FIT_L212": {
+      "baseline_synth": {
+        "50_150": {
+          "censored": 0,
+          "total": 24
+        },
+        "150_300": {
+          "censored": 0,
+          "total": 24
+        },
+        "300_600": {
+          "censored": 0,
+          "total": 24
+        }
+      },
+      "weak_over_synth": {
+        "50_150": {
+          "censored": 0,
+          "total": 24
+        },
+        "150_300": {
+          "censored": 0,
+          "total": 24
+        },
+        "300_600": {
+          "censored": 0,
+          "total": 24
+        }
+      }
+    },
+    "VUT_FIT_L227": {
+      "baseline_synth": {
+        "50_150": {
+          "censored": 0,
+          "total": 24
+        },
+        "150_300": {
+          "censored": 0,
+          "total": 24
+        },
+        "300_600": {
+          "censored": 0,
+          "total": 24
+        }
+      },
+      "weak_over_synth": {
+        "50_150": {
+          "censored": 0,
+          "total": 24
+        },
+        "150_300": {
+          "censored": 0,
+          "total": 24
+        },
+        "300_600": {
+          "censored": 0,
+          "total": 24
+        }
+      }
+    },
+    "VUT_FIT_Q301": {
+      "baseline_synth": {
+        "50_150": {
+          "censored": 2,
+          "total": 24
+        },
+        "150_300": {
+          "censored": 1,
+          "total": 24
+        },
+        "300_600": {
+          "censored": 0,
+          "total": 24
+        }
+      },
+      "weak_over_synth": {
+        "50_150": {
+          "censored": 2,
+          "total": 24
+        },
+        "150_300": {
+          "censored": 2,
+          "total": 24
+        },
+        "300_600": {
+          "censored": 0,
+          "total": 24
+        }
+      }
+    }
+  },
+  "rooms": {
+    "Hotel_SkalskyDvur_ConferenceRoom2": {
+      "baseline_synth": {
+        "50_150": 9.781899964509702,
+        "150_300": 8.746153842032175,
+        "300_600": 7.185259145438064
+      },
+      "weak_over_synth": {
+        "50_150": 13.477201981317748,
+        "150_300": 11.118425928473616,
+        "300_600": 8.433408121976285
+      }
+    },
+    "Hotel_SkalskyDvur_Room112": {
+      "baseline_synth": {
+        "50_150": 6.951346480796337,
+        "150_300": 4.552451680224852,
+        "300_600": 2.410168089729857
+      },
+      "weak_over_synth": {
+        "50_150": 11.7231979820331,
+        "150_300": 5.796935941816772,
+        "300_600": 3.2388922422064796
+      }
+    },
+    "VUT_FIT_C236": {
+      "baseline_synth": {
+        "50_150": 8.59851168480349,
+        "150_300": 8.054699199794669,
+        "300_600": 6.740357683071645
+      },
+      "weak_over_synth": {
+        "50_150": 11.855814564909153,
+        "150_300": 10.299131482431847,
+        "300_600": 8.07360189239288
+      }
+    },
+    "VUT_FIT_D105": {
+      "baseline_synth": {
+        "50_150": 5.517889640167331,
+        "150_300": 4.797200967308615,
+        "300_600": 2.5129587489203256
+      },
+      "weak_over_synth": {
+        "50_150": 9.377515404312092,
+        "150_300": 6.158155809349518,
+        "300_600": 3.9793491793158178
+      }
+    },
+    "VUT_FIT_E112": {
+      "baseline_synth": {
+        "50_150": 13.293206117677883,
+        "150_300": 13.196914288808726,
+        "300_600": 11.429988788384073
+      },
+      "weak_over_synth": {
+        "50_150": 14.875626391722406,
+        "150_300": 12.96333018561603,
+        "300_600": 9.609279484294133
+      }
+    },
+    "VUT_FIT_L207": {
+      "baseline_synth": {
+        "50_150": 5.2101594799133295,
+        "150_300": 3.426940590261011,
+        "300_600": 2.2706108085365253
+      },
+      "weak_over_synth": {
+        "50_150": 9.709768326590364,
+        "150_300": 5.385515160528688,
+        "300_600": 3.231863952353188
+      }
+    },
+    "VUT_FIT_L212": {
+      "baseline_synth": {
+        "50_150": 13.723637812915008,
+        "150_300": 8.785484147467965,
+        "300_600": 3.7200402906480017
+      },
+      "weak_over_synth": {
+        "50_150": 14.097677944562545,
+        "150_300": 8.17606024547633,
+        "300_600": 4.13990581500318
+      }
+    },
+    "VUT_FIT_L227": {
+      "baseline_synth": {
+        "50_150": 7.731297051892251,
+        "150_300": 8.255845998189882,
+        "300_600": 7.221972114786613
+      },
+      "weak_over_synth": {
+        "50_150": 11.165943653404103,
+        "150_300": 11.144687843652079,
+        "300_600": 9.405003929818136
+      }
+    },
+    "VUT_FIT_Q301": {
+      "baseline_synth": {
+        "50_150": 8.449175365498103,
+        "150_300": 3.002587692675078,
+        "300_600": 1.865648743059089
+      },
+      "weak_over_synth": {
+        "50_150": 7.297682488726803,
+        "150_300": 4.17590081449727,
+        "300_600": 2.5920053740596947
+      }
+    }
+  },
+  "limitations": [
+    "Model trained only with synthetic RIRs; this is an external measured-RIR evaluation.",
+    "This inserted-pause screen does not measure natural pauses or conversational timing.",
+    "Linear convolution does not model real microphone noise, nonlinear playback/capture, or motion.",
+    "Audio and derived renders stay local; the report contains metrics only."
+  ]
+}
