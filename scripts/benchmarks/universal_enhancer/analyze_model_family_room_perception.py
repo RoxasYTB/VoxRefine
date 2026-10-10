@@ -21,6 +21,7 @@ from scipy.signal import butter, sosfiltfilt
 
 ROOT = Path(__file__).resolve().parents[3]
 PACK = ROOT / "results/user-recording-test-2026-10-09/model-family-comparison-02"
+INPUT = ROOT / "results/user-recording-test-2026-10-09/01_input_mono_48k.wav"
 OUT = PACK
 RATE = 48_000
 FRAME = 960  # 20 ms
@@ -38,10 +39,13 @@ FILES = {
     "WPE": "WPE.wav",
     "DPDFNet2": "DPDFNET2.wav",
 }
+# These engines were inferred at 16 kHz then resampled for the listening pack.
+NATIVE_BANDWIDTH_HZ = {"StuPASE": 8_000, "ROSE raw": 8_000, "ROSE after Cap60": 8_000}
 
 
-def read(name: str) -> np.ndarray:
-    x, sr = sf.read(PACK / name, dtype="float64")
+def read(name: str | Path) -> np.ndarray:
+    path = name if isinstance(name, Path) else PACK / name
+    x, sr = sf.read(path, dtype="float64")
     if sr != RATE:
         raise ValueError(f"{name}: expected {RATE} Hz, got {sr}")
     if x.ndim == 2:
@@ -75,11 +79,15 @@ def main() -> None:
     audio = {name: read(path) for name, path in FILES.items()}
     n = min(map(len, audio.values()))
     audio = {k: v[:n] for k, v in audio.items()}
+    activity_ref = read(INPUT)[:n]
+    if len(activity_ref) != n:
+        raise ValueError("raw input and listening-pack outputs are not sample-aligned")
     ref = audio["Cap60"]
     ref_env = frame_rms(ref)
-    active = ref_env > 0.035 * np.max(np.abs(ref))
+    activity_env = frame_rms(activity_ref)
+    active = activity_env > 0.035 * np.max(np.abs(activity_ref))
     ref_speech = float(np.sqrt(np.mean(ref_env[active] ** 2)))
-    events = events_from_reference(ref)
+    events = events_from_reference(activity_ref)
 
     # One fixed gain per output: common Cap60 activity mask, never a tail gain.
     matched: dict[str, np.ndarray] = {}
@@ -103,9 +111,11 @@ def main() -> None:
             b = min(n, end + round(wend_ms * RATE / 1000))
             complete = b - a == round((wend_ms - wstart_ms) * RATE / 1000)
             unoverlapped = next_start >= b
-            valid = complete and unoverlapped
+            valid_geometry = complete and unoverlapped
             for name, bands in filtered.items():
                 for band, x in bands.items():
+                    supported = not (band == "8000-19000Hz" and name in NATIVE_BANDWIDTH_HZ)
+                    valid = valid_geometry and supported
                     value = None
                     if valid:
                         value = float(20 * np.log10(max(np.sqrt(np.mean(x[a:b] ** 2)) / ref_speech, 1e-12)))
@@ -116,7 +126,11 @@ def main() -> None:
                         "window_ms": f"{wstart_ms}-{wend_ms}",
                         "band": band,
                         "valid": valid,
-                        "censor_reason": "" if valid else ("overlapped_by_next_speech" if complete else "file_ended_before_window"),
+                        "censor_reason": "" if valid else (
+                            "outside_native_bandwidth" if not supported else
+                            "overlapped_by_next_speech" if complete and not unoverlapped else
+                            "file_ended_before_window"
+                        ),
                         "post_event_rms_db_relative_to_common_speech": value,
                     })
 
@@ -139,10 +153,11 @@ def main() -> None:
         "scope": "single consumed recording; descriptive post-speech residual, not dereverberation ground truth",
         "input_pack": str(PACK.relative_to(ROOT)),
         "sample_rate_hz": RATE,
-        "speech_activity": "20 ms RMS > 3.5% of Cap60 sample peak; gaps up to 80 ms bridged; minimum event 100 ms",
-        "alignment_gain": "one constant per candidate matching RMS over the shared Cap60 active-frame mask",
+        "speech_activity": "20 ms RMS > 3.5% of raw-input sample peak; gaps up to 80 ms bridged; minimum event 100 ms",
+        "alignment_gain": "one constant per candidate matching RMS over the shared raw-input active-frame mask; common level reference is Cap60 active RMS",
         "windows_ms_after_event_end": WINDOWS_MS,
         "bands_hz": BANDS,
+        "native_bandwidth_hz": NATIVE_BANDWIDTH_HZ,
         "offsets": [{"event": i, "start_s": round(s / RATE, 4), "end_s": round(e / RATE, 4)} for i, (s, e) in enumerate(events, 1)],
         "limitations": [
             "Residual contains room response, noise, unvoiced speech, and model artifacts; there is no dry stem.",
