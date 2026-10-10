@@ -197,8 +197,8 @@ def infer_with_mechanism(model: torch.nn.Module, audio: np.ndarray,
         eout = float(np.mean(np.asarray(candidate[a:b], np.float64) ** 2))
         return float(10 * np.log10(max(ein, 1e-30) / max(eout, 1e-30)))
     mechanism = {"w1_actual_reduction_db": reduction(actual),
-        "w1_gain_only_reduction_db": reduction(gain_only[0]),
-        "w1_phase_only_reduction_db": reduction(phase_only[0]),
+        "w1_gain_only_reduction_db": reduction(gain_only),
+        "w1_phase_only_reduction_db": reduction(phase_only),
         "w1_input_energy_weighted_gain_mean": weighted_mean,
         "w1_input_energy_weighted_gain_p10": weighted_quantile(gains, weights, .10),
         "w1_input_energy_weighted_gain_p50": weighted_quantile(gains, weights, .50),
@@ -586,6 +586,20 @@ def run_split(split: str, requested_winner: str | None, device_name: str,
     split_manifest = json.loads(split_manifest_path.read_text())
     if split_manifest.get("opened_for_metrics") or not split_manifest.get("frozen_before_training"):
         raise RuntimeError(f"{split} manifest is already opened or was not frozen")
+    prior_dev_attempt_path = EXPERIMENT / "dev-attempt-001.json"
+    prior_dev_attempt = None
+    if split == "dev":
+        if not prior_dev_attempt_path.is_file():
+            raise FileNotFoundError("record the interrupted implementation attempt before official DEV")
+        prior_dev_attempt = json.loads(prior_dev_attempt_path.read_text())
+        if (prior_dev_attempt.get("name") != "G-early-v2-DEV-attempt-001" or
+                prior_dev_attempt.get("classification") != "invalid_implementation_attempt" or
+                prior_dev_attempt.get("official_dev_summary") is not False or
+                prior_dev_attempt.get("dev_forward_accessed") is not True or
+                prior_dev_attempt.get("metrics_inspected_or_used_for_decisions") is not False or
+                prior_dev_attempt.get("holdout_opened") is not False or
+                prior_dev_attempt.get("test_wav_accessed") is not False):
+            raise RuntimeError("interrupted DEV attempt receipt is invalid")
 
     if split == "sealed":
         decision_path = EXPERIMENT / "dev-evaluation/dev-decision.json"
@@ -735,6 +749,9 @@ def run_split(split: str, requested_winner: str | None, device_name: str,
         "frozen_reference_audit": reference_audit,
         "split_manifest_sha256": sha(split_manifest_path),
         "training_pair_manifest_sha256": sha(data_path),
+        "prior_dev_attempt_receipt_sha256": (
+            sha(prior_dev_attempt_path) if prior_dev_attempt is not None else None),
+        "dev_evaluation_pass_number": 2 if split == "dev" else None,
         "checkpoints": checkpoint_hashes, "pair_count": len(rows),
         "speaker_count": split_manifest["speaker_count"], "device": str(device),
         "torch": torch.__version__, "cap60_exact_inference_seconds": cache_seconds,
@@ -824,6 +841,7 @@ def run_split(split: str, requested_winner: str | None, device_name: str,
             "evaluator_source_sha256": sha(HERE / "evaluate_g_early_v2.py"),
             "training_source_sha256": sha(HERE / "train_g_early_v2.py"),
             "split_freeze_source_sha256": sha(HERE / "freeze_g_early_v2_splits.py"),
+            "prior_dev_attempt_receipt_sha256": sha(prior_dev_attempt_path),
             "training_manifest_sha256": sha(EXPERIMENT / "data/training-data-manifest.json"),
             "dev_manifest_sha256": sha(split_root / "dev/manifest.json"),
             "dev_summary_sha256": sha(out_dir / "summary.json"),
