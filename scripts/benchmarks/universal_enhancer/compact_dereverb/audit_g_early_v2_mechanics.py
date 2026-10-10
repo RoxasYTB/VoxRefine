@@ -10,11 +10,13 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import sys
 import time
 from pathlib import Path
 
 import numpy as np
+os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 import torch
 from torch.nn import functional as F
 
@@ -35,6 +37,7 @@ W1_END = PAUSE_SAMPLE + 300 * 16
 FIXTURE_COUNT = 4
 OVERFIT_STEPS = 400
 SEED = 20261010
+DETERMINISM_ABS_TOL = 1e-5
 
 
 def sha256(path: Path) -> str:
@@ -326,7 +329,14 @@ def audit(args) -> dict:
     if args.output_dir.resolve() == DEFAULT_OUTPUT.parent.resolve() or \
             "g-early-2026-10-10" in str(args.output_dir.resolve()):
         raise RuntimeError("v2 mechanics output must never overlap G-early-v1 artifacts")
+    torch.use_deterministic_algorithms(True)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.allow_tf32 = False
+    torch.backends.cuda.matmul.allow_tf32 = False
     torch.manual_seed(SEED)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(SEED)
     np.random.seed(SEED)
     torch.set_num_threads(args.cpu_threads)
     device = torch.device("cuda" if args.device == "auto" and torch.cuda.is_available()
@@ -385,6 +395,13 @@ def audit(args) -> dict:
     return {
         "protocol": "G-early-v2-synthetic-mechanism-v1",
         "seed": SEED,
+        "determinism": {"torch_use_deterministic_algorithms": True,
+            "cudnn_deterministic": bool(torch.backends.cudnn.deterministic),
+            "cudnn_benchmark": bool(torch.backends.cudnn.benchmark),
+            "cudnn_allow_tf32": bool(torch.backends.cudnn.allow_tf32),
+            "cuda_matmul_allow_tf32": bool(torch.backends.cuda.matmul.allow_tf32),
+            "cublas_workspace_config": os.environ.get("CUBLAS_WORKSPACE_CONFIG"),
+            "repeat_metric_absolute_tolerance": DETERMINISM_ABS_TOL},
         "device": str(device),
         "torch_version": torch.__version__,
         "source_sha256": {"model": sha256(HERE / "model_g_early_v2.py"),
