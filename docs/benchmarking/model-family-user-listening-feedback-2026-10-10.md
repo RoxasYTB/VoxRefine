@@ -93,6 +93,31 @@ Sur le même masque brut commun (431 trames actives de 20 ms) et après égalisa
 
 Ces statistiques n'étayent pas une compression globale de StuPASE sur cette phrase : la dynamique de ses trames est proche d'Adobe et son facteur de crête médian proche de Cap60. Son caractère « compressé » à l'écoute semble donc davantage lié au timbre, au lissage ou aux artefacts génératifs qu'à un simple écrasement de l'enveloppe RMS. Il reste possible qu'une compression locale/non linéaire ne soit pas capturée par ces deux résumés; ce clip ne permet pas d'en identifier la cause.
 
+## Test de filtre court : stable ou reconstruction variable ?
+
+Pour départager une correction de réflexions cohérente d'un changement de texture plus variable, j'ai pris Cap60 comme entrée commune `x` et chaque rendu existant comme `y`. Après alignement par corrélation (fenêtre de recherche ±100 ms, interpolation du pic à sous-échantillon), le test mesure la cohérence complexe input/output sur les mêmes segments voisés, la variabilité de `Y/X` d'une fenêtre à l'autre, puis la part de la sortie prédite hors segments d'entraînement par un FIR causal de 50 ms. Le filtre est ajusté sur deux groupes d'événements et testé sur le troisième; les plis tournent sur les six événements.
+
+Le solveur FIR a été calibré avant interprétation sur un signal sec local auquel seules deux réflexions précoces connues ont été ajoutées (8 ms à −8 dB, 23 ms à −14 dB, sans queue tardive). Avec des fenêtres fréquentielles de 100 ms, le contrôle donne une cohérence médiane de 0,975 en 300–3000 Hz et 0,988 en 3000–7900 Hz; les trois R² FIR hors pli valent 0,99885–0,99992. Ça vérifie le comportement du contrôle pour une convolution courte stable. Ce contrôle ne prouve pas que toute réverbération de pièce soit un FIR court.
+
+| Rendu | Cohérence 300–3k | Cohérence 3–7,9k | R² FIR 50 ms, hors pli | Énergie cepstrale 2–50 ms |
+|---|---:|---:|---:|---:|
+| Cap60 | 1,000 | 1,000 | 0,99997 | 0,000 |
+| Adobe V2 | 0,842 | 0,815 | 0,83163 | 0,482 |
+| StuPASE | 0,151 | 0,138 | −0,13241 | 0,221 |
+| ROSE brut | 0,847 | 0,844 | 0,66731 | 0,020 |
+| ROSE après Cap60 | 0,911 | 0,865 | 0,72231 | 0,021 |
+| WPE | 0,997 | 0,999 | 0,99906 | 0,865 |
+| DPDFNet2 | 1,000 | 1,000 | 0,99944 | 0,517 |
+
+Le R² représente ici uniquement la prédiction d'une sortie à partir de Cap60 sur les segments exclus de l'ajustement; ce n'est pas une note de qualité. Lecture utile par rapport aux retours d'écoute :
+
+- **DPDFNet2 et WPE** restent presque entièrement explicables par un filtre court stable, mais gardent une forte énergie cepstrale à 2–50 ms. Ils sont donc très cohérents avec l'entrée tout en conservant une coloration qui peut trahir la pièce. Cela cadre avec votre impression de réverbération persistante pour ces deux rendus; ce n'est pas une preuve causale.
+- **ROSE** réduit presque à zéro l'indice cepstral, mais reste perçu comme réverbérant. Ce proxy n'isole donc pas la réverbération; ROSE change aussi la texture/spectre et ne se réduit pas bien à un FIR stable.
+- **StuPASE** a la cohérence et le R² les plus faibles, ce qui confirme un changement de signal important que ne décrivent ni le niveau RMS ni SRMR. Son caractère compressé à l'écoute n'est pas celui d'un simple compresseur statique; il s'agit d'une transformation beaucoup moins fidèle à une convolution fixe.
+- **Adobe V2** est intermédiaire : davantage de transformation non linéaire que WPE/DPDFNet2, mais une sortie encore partiellement prévisible depuis Cap60.
+
+La figure cohérence–R² est gardée localement avec les données du pack : `results/user-recording-test-2026-10-09/model-family-comparison-02/short_filter_explainability.png`. Les résultats par pli et les paramètres sont dans `short_filter_explainability.json` et `.csv`. Le script reproductible est [`analyze_short_filter_explainability.py`](../../scripts/benchmarks/universal_enhancer/analyze_short_filter_explainability.py).
+
 La contradiction la plus instructive est conservée : DPDFNet2 est environ 32 dB plus bas que Cap60 sur l'unique offset mesurable entre 150 et 300 ms, mais il est perçu comme plus réverbérant. **La mesure ne classe donc pas la sensation entendue.** Une réduction d'énergie de pause ne prouve pas une suppression des réflexions précoces ou du filtrage en peigne pendant les phonèmes; un timbre artificiel peut même être perçu comme une pièce plus présente. Ces explications restent des hypothèses à départager, pas une attribution causale sur ce clip mono.
 
 Les bandes au-dessus de 8 kHz sont marquées comme non prises en charge pour StuPASE et ROSE-CD, exécutés à 16 kHz puis rééchantillonnés pour le pack. Le rééchantillonnage n'ajoute pas de contenu au-dessus de leur bande native; leurs niveaux HF ne sont donc pas rapportés comme des mesures comparables.
@@ -107,7 +132,7 @@ Les bandes au-dessus de 8 kHz sont marquées comme non prises en charge pour Stu
 4. Ne faire une inférence avec un nouveau moteur qu'après avoir vérifié poids, provenance et licence. VoiceFixer est déjà cloné localement, mais son rapport antérieur note que le checkpoint téléchargé n'a pas satisfait le checksum annoncé; il ne doit pas être rechargé. StoRM est cloné, mais aucun checkpoint n'est présent localement et ses poids distribués séparément n'ont pas été audités. Aucun des deux n'est actuellement un candidat exécutable/promouvable.
 5. Pour `test.wav`, sans stem sec Adobe ni réponse impulsionnelle, les métriques restent des indicateurs partiels. Le fichier n'a pas été téléversé ni partagé.
 
-GPT Web a recommandé d'abandonner le RMS terminal comme score principal et d'ajouter SRMR, coloration spectrale et mesures de préservation de la voix. Cette passe ajoute SRMR, un indice de ripple spectrale contrôlé sur deux paires locales sèches/réverbérées et deux statistiques simples de dynamique. La ripple demeure confondue par le timbre et le modèle; les statistiques d'amplitude ne suffisent pas à expliquer un timbre jugé compressé. La réverbération présente dans l'entrée brute rend plusieurs pauses non mesurables selon la règle conservatrice; il reste seulement 1/1/0 offsets complets selon la fenêtre. Le nombre d'offsets mesurables est trop faible pour une conclusion statistique.
+GPT Web a recommandé d'abandonner le RMS terminal comme score principal et d'ajouter SRMR, coloration spectrale, préservation de la voix et explicabilité par filtre court. Cette passe ajoute ces métriques sur les rendus déjà locaux. Les contrôles montrent que chaque axe sépare des phénomènes différents mais ne suffit pas à établir une cause perceptive. La réverbération présente dans l'entrée brute rend plusieurs pauses non mesurables selon la règle conservatrice; il reste seulement 1/1/0 offsets complets selon la fenêtre. Le nombre d'offsets mesurables est trop faible pour une conclusion statistique.
 
 Le script reproductible est [`analyze_model_family_room_perception.py`](../../scripts/benchmarks/universal_enhancer/analyze_model_family_room_perception.py). Les CSV/JSON/PNG et WAV liés à l'enregistrement restent en local sous `results/` et ne sont pas ajoutés au dépôt.
 
