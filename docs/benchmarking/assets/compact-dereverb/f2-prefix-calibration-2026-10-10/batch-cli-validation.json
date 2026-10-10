@@ -1,0 +1,60 @@
+{
+  "file_count_in_group": 10,
+  "unique_solo_files": 8,
+  "order_probe_same_audio_first_and_last": true,
+  "per_file": [
+    {
+      "name": "s0-j0-full_wet",
+      "max_abs_error": 0.0810546875,
+      "identical_sha256": false
+    },
+    {
+      "name": "s0-j0-full_clean",
+      "max_abs_error": 0.062774658203125,
+      "identical_sha256": false
+    },
+    {
+      "name": "s0-j0-prefix_wet",
+      "max_abs_error": 0.188873291015625,
+      "identical_sha256": false
+    },
+    {
+      "name": "s0-j0-prefix_clean",
+      "max_abs_error": 0.0694580078125,
+      "identical_sha256": false
+    },
+    {
+      "name": "s7-j127-full_wet",
+      "max_abs_error": 0.1767578125,
+      "identical_sha256": false
+    },
+    {
+      "name": "s7-j127-full_clean",
+      "max_abs_error": 0.08135986328125,
+      "identical_sha256": false
+    },
+    {
+      "name": "s7-j127-prefix_wet",
+      "max_abs_error": 0.189727783203125,
+      "identical_sha256": false
+    },
+    {
+      "name": "s7-j127-prefix_clean",
+      "max_abs_error": 0.081451416015625,
+      "identical_sha256": false
+    },
+    {
+      "name": "order_first",
+      "max_abs_error": 0.0,
+      "identical_sha256": true
+    },
+    {
+      "name": "order_last",
+      "max_abs_error": 0.111480712890625,
+      "identical_sha256": false
+    }
+  ],
+  "max_abs_error": 0.189727783203125,
+  "all_below_1e-7": false,
+  "test_wav_accessed": false
+}

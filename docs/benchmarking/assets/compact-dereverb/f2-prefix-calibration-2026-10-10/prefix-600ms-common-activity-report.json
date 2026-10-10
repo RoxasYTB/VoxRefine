@@ -1,0 +1,17 @@
+{
+  "name": "F2-Cap60-prefix-common-mask-rescore-v1",
+  "source_schedule_sha256": "d3d94fb0e7adcb7d0647cb65597b16f89dbb08281f6b442cd25f1a958dd65f31",
+  "deep_filter_sha256": "70775e251eee44c0f2451a1e833326cf8bcbbe304d3e7cd12851e6fce72ef7da",
+  "prefix_end_after_pause_ms": 600,
+  "measurement_end_after_pause_ms": 600,
+  "activity_mask_source": "raw clean on the frozen 2s training crop",
+  "frame_mapping": "10ms sample-time bins",
+  "completed_candidates": 64,
+  "max_waveform_error": 0.0001220703125,
+  "max_waveform_rms_error": 1.0513878431873378e-05,
+  "max_abs_window_level_delta_db": 0.5039241850325453,
+  "eligibility_disagreements": 0,
+  "near_threshold_count": 33,
+  "empirical_prefix_gate_pass": false,
+  "test_wav_accessed": false
+}

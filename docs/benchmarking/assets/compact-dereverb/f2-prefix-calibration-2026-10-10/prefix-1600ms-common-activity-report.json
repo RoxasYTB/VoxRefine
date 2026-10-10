@@ -1,0 +1,49 @@
+{
+  "name": "F2-Cap60-prefix-margin-calibration-v1",
+  "source_schedule_sha256": "d3d94fb0e7adcb7d0647cb65597b16f89dbb08281f6b442cd25f1a958dd65f31",
+  "deep_filter_sha256": "70775e251eee44c0f2451a1e833326cf8bcbbe304d3e7cd12851e6fce72ef7da",
+  "slots": 8,
+  "candidate_indices": [
+    0,
+    1,
+    3,
+    7,
+    15,
+    31,
+    63,
+    127
+  ],
+  "prefix_end_after_pause_ms": 1600,
+  "guard_policy": "Cap60 wrapper appends the same 100ms EOF guard",
+  "measurement_end_after_pause_ms": 600,
+  "activity_mask_source": "raw clean on the fixed 2s tailbank crop",
+  "reference_energy_window": "active Cap60-clean samples from pause-500ms to pause-50ms",
+  "tail_windows": {
+    "150_300": [
+      150,
+      300
+    ],
+    "300_600": [
+      300,
+      600
+    ]
+  },
+  "frame_mapping": "10ms sample-time bins",
+  "completed_candidates": 64,
+  "max_waveform_error": 0.0,
+  "max_waveform_rms_error": 0.0,
+  "max_abs_window_level_delta_db": 0.0,
+  "eligibility_disagreements": 0,
+  "near_threshold_count": 33,
+  "empirical_prefix_gate_pass": true,
+  "per_window_screening_margin_db": {
+    "150_300": 1.0,
+    "300_600": 1.0
+  },
+  "screening_reject_db": {
+    "150_300": -51.0,
+    "300_600": -51.0
+  },
+  "elapsed_s": 37.23963345808443,
+  "test_wav_accessed": false
+}
