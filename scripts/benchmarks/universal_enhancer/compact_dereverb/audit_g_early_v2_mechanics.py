@@ -203,6 +203,43 @@ def w1_mask_diagnostics(model, wet: torch.Tensor,
     return rows
 
 
+def w1_phase_gain_decomposition(model, wet: torch.Tensor,
+                                device: torch.device) -> list[dict[str, float]]:
+    """Descriptive W1 reductions for full, gain-only, and phase-only masks."""
+    model.eval()
+    results = []
+    with torch.inference_mode():
+        for index in range(FIXTURE_COUNT):
+            x = wet[index:index + 1].to(device)
+            window = model.window.to(dtype=x.dtype, device=x.device)
+            spec = torch.stft(x, n_fft=model.n_fft, hop_length=model.hop_length,
+                win_length=model.n_fft, window=window, center=True, return_complex=True)
+            logits = model._predict_mask(torch.stack((spec.real, spec.imag), dim=1))
+            gain = 1.0 - model.MAX_ATTENUATION * torch.sigmoid(logits[:, 0])
+            phase = torch.pi * torch.tanh(logits[:, 1])
+            masks = {
+                "full": torch.polar(gain, phase),
+                "gain_only": torch.polar(gain, torch.zeros_like(phase)),
+                "phase_only": torch.polar(torch.ones_like(gain), phase),
+            }
+            input_energy = x[0, W1_START:W1_END].square().mean()
+            row = {}
+            for name, mask in masks.items():
+                enhanced = torch.istft(spec * mask, n_fft=model.n_fft,
+                    hop_length=model.hop_length, win_length=model.n_fft,
+                    window=window, center=True, length=x.shape[-1])[0]
+                output_energy = enhanced[W1_START:W1_END].square().mean()
+                row[f"{name}_w1_reduction_db"] = float(10.0 * torch.log10(
+                    (input_energy + 1e-20) / (output_energy + 1e-20)))
+            row["combined_minus_gain_only_db"] = (
+                row["full_w1_reduction_db"] - row["gain_only_w1_reduction_db"])
+            row["combined_minus_phase_only_db"] = (
+                row["full_w1_reduction_db"] - row["phase_only_w1_reduction_db"])
+            results.append(row)
+    model.train()
+    return results
+
+
 def gain_autograd_checks(device: torch.device) -> dict:
     points = (-3.0, 0.0, 3.0)
     rows = []
@@ -280,6 +317,7 @@ def overfit(kind: str, initial_state: dict, wet: torch.Tensor,
         "w1_mask_diagnostics_before": mask_before,
         "w1_mask_diagnostics_after": mask_after,
         "w1_mask_diagnostics_delta": mask_delta,
+        "w1_phase_gain_decomposition": w1_phase_gain_decomposition(model, wet, device),
         "active_speech_output_minus_target_db": active_delta,
         "elapsed_seconds": time.perf_counter() - started}
 
