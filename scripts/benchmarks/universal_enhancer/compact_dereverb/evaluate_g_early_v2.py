@@ -5,11 +5,13 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 import time
 from pathlib import Path
 
 import numpy as np
+os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 import torch
 from scipy.stats import theilslopes
 
@@ -115,7 +117,8 @@ def load_g_model(variant: str, device: torch.device) -> tuple[torch.nn.Module, P
             config.get("protocol_version") != "G-early-v2-real-2026-10-10" or
             config.get("training_source_sha256") != sha(HERE / "train_g_early_v2.py") or
             config.get("split_freeze_source_sha256") != sha(HERE / "freeze_g_early_v2_splits.py") or
-            config.get("split_audit_source_sha256") != sha(HERE / "audit_g_early_v2_splits.py")):
+            config.get("split_audit_source_sha256") != sha(HERE / "audit_g_early_v2_splits.py") or
+            config.get("split_audit_sha256") != sha(EXPERIMENT / "split-integrity-audit.json")):
         raise RuntimeError(f"{variant} is missing a frozen step-3000 checkpoint/config")
     validate_evaluator_binding(config)
     state = torch.load(checkpoint, map_location="cpu", weights_only=False)
@@ -526,15 +529,27 @@ def gate_summary(summary: dict) -> dict:
 
 def run_split(split: str, requested_winner: str | None, device_name: str,
               deep_filter: Path) -> dict:
+    torch.use_deterministic_algorithms(True)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cuda.matmul.allow_tf32 = False
+    torch.backends.cudnn.allow_tf32 = False
     split_root = EXPERIMENT / "splits"
     index_path = split_root / "manifest.json"
     if not index_path.is_file():
         raise FileNotFoundError("G splits must be frozen before evaluation")
     split_index = json.loads(index_path.read_text())
+    split_audit_path = EXPERIMENT / "split-integrity-audit.json"
+    if not split_audit_path.is_file():
+        raise FileNotFoundError("independent v2 split audit must pass before any model forward")
+    split_audit = json.loads(split_audit_path.read_text())
     if (not split_index.get("frozen_before_training") or
             split_index.get("test_wav_accessed") is not False or
             not split_index.get("dev_coverage_gate_pass") or
-            not split_index.get("holdout_coverage_gate_pass")):
+            not split_index.get("holdout_coverage_gate_pass") or
+            split_audit.get("holdout_opened") is not False or
+            split_audit.get("opened_for_metrics") is not False or
+            split_audit.get("split_index_sha256") != sha(index_path)):
         raise RuntimeError("G-early split freeze record or coverage gates are invalid")
     if split_index.get("training_pair_manifest_sha256") != sha(
             EXPERIMENT / "data/pairs.jsonl"):
@@ -722,6 +737,12 @@ def run_split(split: str, requested_winner: str | None, device_name: str,
         "checkpoints": checkpoint_hashes, "pair_count": len(rows),
         "speaker_count": split_manifest["speaker_count"], "device": str(device),
         "torch": torch.__version__, "cap60_exact_inference_seconds": cache_seconds,
+        "cuda_version": torch.version.cuda,
+        "gpu_name": torch.cuda.get_device_name(0) if device.type == "cuda" else None,
+        "deterministic_algorithms": torch.are_deterministic_algorithms_enabled(),
+        "cudnn_deterministic": torch.backends.cudnn.deterministic,
+        "cudnn_benchmark": torch.backends.cudnn.benchmark,
+        "cublas_workspace_config": os.environ.get("CUBLAS_WORKSPACE_CONFIG"),
         "cap60_exact_reused_branches": cap60_reused,
         "cap60_exact_new_branches": cap60_new,
         "evaluation_elapsed_seconds": time.perf_counter() - started,
