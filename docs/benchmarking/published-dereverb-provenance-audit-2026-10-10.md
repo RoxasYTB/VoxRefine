@@ -1,0 +1,33 @@
+# Published dereverberation candidate and data provenance audit — 2026-10-10
+
+## Decision
+
+**Status: `BLOCKED_ON_FRESH_SOURCE_AND_WEIGHT_LICENSE`. No inference run started.** Candidate selection and data provenance are not yet clean enough for a fresh, independent comparison. The benchmark plan is frozen at [published dereverb benchmark plan](../superpowers/plans/2026-10-10-published-dereverb-benchmark.md). This report records why execution is paused and what must be resolved first.
+
+## Candidate model manifests
+
+All repository revisions were read from Hugging Face's model API and model cards at the recorded revisions. File sizes and content digests below came from immutable `HEAD` responses. A repo-level license field alone is not treated as proof that checkpoint weights carry that license.
+
+| Candidate | Immutable revision | Relevant files | Finding |
+|---|---|---|---|
+| ROSE-CD | `38e7dcb2f132b1400490426eef18bda9d03bb428` | `logs/CT_Reverb_EARS_pesq5e-4_L2/q0j0rpuu/last.ckpt`, 1,313,064,031 bytes, SHA-256/ETag `0eda71bf7d06e9b5c6fddf8421b849eb252964e94b9fcc2078a1cf5d21461cb9` | Model card labels this one-step checkpoint EARS-REVERB dereverberation and declares MIT for the project. The card does not separately state in its checkpoint table that the weights themselves are MIT. **Weight license needs confirmation** before integration/distribution. |
+| StuPASE | model `539963f425ae201ac8c379b6480e3b182a4840ad`; official code `cisco-open/pase` revision `45614efae73dc49bf36018d1ca6a9319b3050038` | `CFM.pt` 758,024,988 bytes, SHA-256 `99531c8869761aca731a70b1f89875100cb643b560e52a4551b58300bb1ea01f`; `DeWavLM-R.pt` 1,261,990,714 bytes, SHA-256 `f3782058ec72f8a5107d17c4cbf66efc3fb398331490806e64d2bc577689a80e`; `Vocoder_Mel-16k.pt` 242,750,990 bytes, SHA-256 `56a816ba2f662ebb73d30a75f95c97192b82c5dc66c82c99aa4ef70543fc0e51` | Model card declares Apache-2.0; the official code license attribution covers Cisco-authored StuPASE inference/model files and identifies third-party components/licenses in `NOTICE`. The published defaults are 16 kHz mono, 8 steps, CFG 0.5, sway −1.0. The published feature path peak-normalizes to 0.9 and the file wrapper rescales output peak to input peak. Those are part of the official path and must be declared in output-level analysis. No explicit inference dtype override appears in the code; use its default floating-point path. The GTX 1050 Ti official-path OOM rule is pre-registered. |
+| SGMSE+ HF | `b6485214b3662a7f90309f397cacf1384046783c` | `train_vb_29nqe0uh_epoch=115.ckpt` | HF manifest only exposes the VoiceBank-DEMAND checkpoint, not the EARS-Reverb checkpoint named in README links to external storage. Excluded from this candidate set to avoid conflating the HF repository with an independently hosted weight. A local EARS-Reverb checkpoint from an older experiment is not considered fresh provenance. |
+
+## Fresh data source audit
+
+- **FLEURS en_us/test rejected:** current official HF schema does not expose a `speaker_id` feature. The legacy TSV has an extra unlabeled field which resembles an identity, but it cannot be inferred from filenames or assumed to be stable speaker metadata. Thus the previously contemplated 24-speaker selection is **NON-EXECUTABLE**.
+- **LibriSpeech rejected for fresh holdout:** the repository already uses `train-clean-100`, `dev-clean`, `dev-other`, `test-other`, and `test-clean`; project notes document consumed test speakers and repeated experiments on train-clean-360. A new random draw from these data would not establish a fresh independent holdout.
+- **VCTK rejected for fresh holdout:** the workspace contains VCTK samples such as p226/p287 and several explicit VCTK cross-domain/serial evaluations. Other speaker IDs cannot be presumed unused without a full input-level consumption ledger.
+- **Common Voice 26.0 candidate rejected pending terms:** Mozilla Data Collective's exact British English derived release `cmrt6zrob000zmm07yqwjlpwi` is listed as CC0-1.0 and has explicit speaker-disjoint train/dev/test `client_id` splits, but its terms say not to attempt speaker identification and not to rehost the dataset; the release archive is 6.97 GB. Do not use this release until confirming that our internal deduplication by stable client ID is allowed under the no-identification term and that the no-rehost restriction permits this local benchmark. The source dataset is Common Voice 26.0 English, whose full English archive is about 88 GB; it is not a lightweight external holdout.
+- **Common Voice 17.0 Hugging Face mirror rejected:** the official gated Mozilla repo does not expose an unauthenticated audio manifest. The community mirror exposes `client_id` in feature metadata but does not state a dataset license in card metadata and its README is access-restricted. Do not rely on the mirror as a redistributable or benchmark source without authentic source release/license receipts.
+- No checkpoint inference will be run on old Adobe outputs or user recordings as part of this model comparison.
+
+## Required before execution
+
+1. Obtain an eligible fresh corpus with explicit, stable speaker IDs and clear local benchmark rights. Common Voice may be reconsidered only after the no-identification/no-rehost terms are interpreted for internal deduplication and the exact downloadable release is verified. Verify source/license, archive hash, dry/noise eligibility under pre-registered acoustic criteria, and no overlap with model training sets or previously consumed speakers. Do not assume a current release meets these conditions.
+2. Build and freeze the speaker/clip contamination ledger from existing manifests, scripts, reports, ignored audio assets, and prior evaluation outputs (the currently inventoried history already exceeds 343 speaker identities; exact records need a reproducible pass).
+3. Get explicit licensing evidence applying to ROSE-CD weights; StuPASE's model card and official Cisco file headers explicitly describe Apache-2.0, subject to keeping its third-party notices. Keep ROSE-CD `LICENSE_BLOCKED` for integration/distribution until weight terms are clear.
+4. Freeze the fresh 24-speaker × 4-RIR input manifest and official model inference adapters before any candidate output is examined. Preserve published defaults exactly (StuPASE: 8 steps, CFG 0.5, sway −1.0); its wrapper's peak rescaling is an official processing step and must be declared in level statistics. Add no other output level adjustment.
+
+The previously defined primary quality and resource gates remain unchanged. A model passing a synthetic benchmark would still not demonstrate Adobe parity, universality, or live capability.
