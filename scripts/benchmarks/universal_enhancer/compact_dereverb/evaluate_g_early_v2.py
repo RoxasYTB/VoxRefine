@@ -570,8 +570,7 @@ def run_split(split: str, requested_winner: str | None, device_name: str,
         dev = json.loads(dev_path.read_text())
         if requested_winner != dev.get("selected_winner") or requested_winner not in VARIANTS:
             raise RuntimeError("HOLDOUT-G accepts only the winner frozen by DEV")
-        if dev["gates_by_variant"][requested_winner]["overall_state"] not in (
-                "PASS", "PASS_EARLY_ONLY_PROVISIONAL"):
+        if dev["gates_by_variant"][requested_winner]["overall_state"] != "PASS":
             raise RuntimeError("DEV model failed a primary gate; holdout stays sealed")
         variants = (requested_winner,)
         out_dir = EXPERIMENT / "sealed/evaluation"
@@ -782,8 +781,9 @@ def run_split(split: str, requested_winner: str | None, device_name: str,
             "overall_state": variant_summary["overall_state"]}
 
     if split == "dev":
-        passing = [v for v in VARIANTS if summary["gates_by_variant"][v]["overall_state"] in
-                   ("PASS", "PASS_EARLY_ONLY_PROVISIONAL")]
+        # Only a fully informative PASS may select a winner or authorize HOLDOUT.
+        # Provisional early-only results remain in the report, but never open sealed data.
+        passing = [v for v in VARIANTS if summary["gates_by_variant"][v]["overall_state"] == "PASS"]
         if len(passing) == 1:
             summary["selected_winner"] = passing[0]
         elif len(passing) == 2:
@@ -812,9 +812,8 @@ def run_split(split: str, requested_winner: str | None, device_name: str,
     if split == "dev" and summary.get("selected_winner") in VARIANTS:
         winner = summary["selected_winner"]
         winner_state = summary["gates_by_variant"][winner]["overall_state"]
-        dev_pass = winner_state in ("PASS", "PASS_EARLY_ONLY_PROVISIONAL")
-        passing = [v for v in VARIANTS if summary["gates_by_variant"][v]["overall_state"] in
-                   ("PASS", "PASS_EARLY_ONLY_PROVISIONAL")]
+        dev_pass = winner_state == "PASS"
+        passing = [v for v in VARIANTS if summary["gates_by_variant"][v]["overall_state"] == "PASS"]
         rule = ("sole_passing_variant" if len(passing) == 1 else
             "max_lexicographic_lcb300_600,lcb150_300,weak_p10,-weak_loss_below_minus3; missing/nonfinite metrics rank last")
         winner_checkpoint = EXPERIMENT / winner / "checkpoints/step-003000.pt"
