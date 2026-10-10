@@ -1,0 +1,230 @@
+{
+  "name": "F2-targeted-RT60-DRR-full-exact-grid-v1",
+  "schedule_index": 5,
+  "source_schedule_sha256": "d3d94fb0e7adcb7d0647cb65597b16f89dbb08281f6b442cd25f1a958dd65f31",
+  "source_pair_sha256": [
+    "5ea544369f2a604c0a1e2b5eb42ed9882b1429c5768ed2ecddf3022f375b8b8c",
+    "7fcd8a2e29aa24e3a32fafd0cbda845bcb05ceac3d423f92d69ec932c9678079"
+  ],
+  "deep_filter_sha256": "70775e251eee44c0f2451a1e833326cf8bcbbe304d3e7cd12851e6fce72ef7da",
+  "seed_shared_across_grid": 1334958170,
+  "t60_values_s": [
+    1.1,
+    1.4,
+    1.7
+  ],
+  "drr_values_db": [
+    -3.0,
+    -6.0,
+    -9.0,
+    -12.0
+  ],
+  "full_exact_runs": 24,
+  "eligible_probe_count": 1,
+  "eligible_probes": [
+    {
+      "t60_s": 1.7,
+      "direct_to_reverb_db": -12.0
+    }
+  ],
+  "at_least_3_of_12_eligible": false,
+  "same_random_geometry_seed": true,
+  "surrogate_used": false,
+  "selection_or_training_data_modified": false,
+  "elapsed_s": 144.0599820179632,
+  "records": [
+    {
+      "t60_s": 1.1,
+      "direct_to_reverb_db": -3.0,
+      "seed": 1334958170,
+      "shared_scale": 1.0,
+      "w1_w2_tail_db": {
+        "150_300": -57.56778867606309,
+        "300_600": -63.62019346360298
+      },
+      "reference_valid": true,
+      "full_eligible": false,
+      "cap60_wet_source_sha256": "36a6c79cce5d9e5a4bf7c6e9a964a09e5ba8c4a9d6e82d87ebecd078212ebaf1",
+      "cap60_clean_source_sha256": "919e021d6232652e467abd77912d9aa0cbe17cfeaa11e8b4caed44d31ffe5269",
+      "cap60_wet_elapsed_s": 7.255697455955669,
+      "cap60_clean_elapsed_s": 6.9992046690313146
+    },
+    {
+      "t60_s": 1.1,
+      "direct_to_reverb_db": -6.0,
+      "seed": 1334958170,
+      "shared_scale": 0.7319559792882803,
+      "w1_w2_tail_db": {
+        "150_300": -54.268686305142005,
+        "300_600": -60.06143436132203
+      },
+      "reference_valid": true,
+      "full_eligible": false,
+      "cap60_wet_source_sha256": "356cc6b15633c764de69b06a8a558bb08451ca4c960765b689984ff1136ca4b0",
+      "cap60_clean_source_sha256": "7b85d8390f85d0c5807c096455bbe74f4826d17e54fa6997a685dc6f8724ccba",
+      "cap60_wet_elapsed_s": 7.097536012995988,
+      "cap60_clean_elapsed_s": 7.021635689074174
+    },
+    {
+      "t60_s": 1.1,
+      "direct_to_reverb_db": -9.0,
+      "seed": 1334958170,
+      "shared_scale": 0.5196574997952953,
+      "w1_w2_tail_db": {
+        "150_300": -51.25445149362242,
+        "300_600": -56.74299427423152
+      },
+      "reference_valid": true,
+      "full_eligible": false,
+      "cap60_wet_source_sha256": "fac69c9a81afc3504f412455e404edd87987e280e9e6873460b806735ee66975",
+      "cap60_clean_source_sha256": "3a41c2b05e3e28aa9562a75a70ce8a85025c61b8023bcd555286e0426abbb4c9",
+      "cap60_wet_elapsed_s": 7.297228753101081,
+      "cap60_clean_elapsed_s": 6.947132928995416
+    },
+    {
+      "t60_s": 1.1,
+      "direct_to_reverb_db": -12.0,
+      "seed": 1334958170,
+      "shared_scale": 0.36863084333195023,
+      "w1_w2_tail_db": {
+        "150_300": -48.31123472387853,
+        "300_600": -53.82416631797713
+      },
+      "reference_valid": true,
+      "full_eligible": false,
+      "cap60_wet_source_sha256": "64fc0ea16cf1d94da5f5eb578417854d331adbaf426f7f2f0231625463d6380e",
+      "cap60_clean_source_sha256": "6e1c3946cc0b1a5899609c186ab28c5522917a06b258d89e0296c3d9a60ecaf5",
+      "cap60_wet_elapsed_s": 7.284910699003376,
+      "cap60_clean_elapsed_s": 7.1574141579912975
+    },
+    {
+      "t60_s": 1.4,
+      "direct_to_reverb_db": -3.0,
+      "seed": 1334958170,
+      "shared_scale": 1.0,
+      "w1_w2_tail_db": {
+        "150_300": -55.83159971831211,
+        "300_600": -61.443562689181775
+      },
+      "reference_valid": true,
+      "full_eligible": false,
+      "cap60_wet_source_sha256": "2784d99cd141f3f17a92ba2371c8d158d91d26c3fa425a6b48f9c8f090712043",
+      "cap60_clean_source_sha256": "919e021d6232652e467abd77912d9aa0cbe17cfeaa11e8b4caed44d31ffe5269",
+      "cap60_wet_elapsed_s": 7.23724243498873,
+      "cap60_clean_elapsed_s": 7.329247230081819
+    },
+    {
+      "t60_s": 1.4,
+      "direct_to_reverb_db": -6.0,
+      "seed": 1334958170,
+      "shared_scale": 0.8218562480530702,
+      "w1_w2_tail_db": {
+        "150_300": -52.3417422805223,
+        "300_600": -57.85715172854937
+      },
+      "reference_valid": true,
+      "full_eligible": false,
+      "cap60_wet_source_sha256": "1f19d71deed2b25df8b6c595508b9b8c0e24363f9ddb7e2a6a2d693348a49e6f",
+      "cap60_clean_source_sha256": "57b49891c2a0db3da6035aea5c8d382378ec10f716bffd7fa6563147082c93c6",
+      "cap60_wet_elapsed_s": 7.174373334972188,
+      "cap60_clean_elapsed_s": 6.884982819086872
+    },
+    {
+      "t60_s": 1.4,
+      "direct_to_reverb_db": -9.0,
+      "seed": 1334958170,
+      "shared_scale": 0.5837608041798948,
+      "w1_w2_tail_db": {
+        "150_300": -49.5921684295479,
+        "300_600": -54.46196097371876
+      },
+      "reference_valid": true,
+      "full_eligible": false,
+      "cap60_wet_source_sha256": "a75de39486b34d8e14ca7c6f869e3e3ecd06640557340dcdb5b565b10ad2520c",
+      "cap60_clean_source_sha256": "5a1f88e4d41a01745005bfca10cb01cb86abf47150cc8c0fd3585f9c926ecb08",
+      "cap60_wet_elapsed_s": 7.124463890097104,
+      "cap60_clean_elapsed_s": 7.0693448999663815
+    },
+    {
+      "t60_s": 1.4,
+      "direct_to_reverb_db": -12.0,
+      "seed": 1334958170,
+      "shared_scale": 0.41424434014790745,
+      "w1_w2_tail_db": {
+        "150_300": -46.63943432321949,
+        "300_600": -51.3676151675684
+      },
+      "reference_valid": true,
+      "full_eligible": false,
+      "cap60_wet_source_sha256": "1b89b08a38c54886da3d5d9b21519433b0d65f49db69dedf23d0cff0b8fad635",
+      "cap60_clean_source_sha256": "c085c88db33f14dd719904d3f4e1399c04e98b99487fac6371981ce7529946d9",
+      "cap60_wet_elapsed_s": 7.4870507679879665,
+      "cap60_clean_elapsed_s": 6.991839800029993
+    },
+    {
+      "t60_s": 1.7,
+      "direct_to_reverb_db": -3.0,
+      "seed": 1334958170,
+      "shared_scale": 1.0,
+      "w1_w2_tail_db": {
+        "150_300": -53.01229884213587,
+        "300_600": -59.162448770091046
+      },
+      "reference_valid": true,
+      "full_eligible": false,
+      "cap60_wet_source_sha256": "eb3ce39adb7c2b0478ef7ea1ade446a3fbd6be3b7cfd7727e24462ebec8350f5",
+      "cap60_clean_source_sha256": "919e021d6232652e467abd77912d9aa0cbe17cfeaa11e8b4caed44d31ffe5269",
+      "cap60_wet_elapsed_s": 7.153163595939986,
+      "cap60_clean_elapsed_s": 6.93551535892766
+    },
+    {
+      "t60_s": 1.7,
+      "direct_to_reverb_db": -6.0,
+      "seed": 1334958170,
+      "shared_scale": 0.803874197544542,
+      "w1_w2_tail_db": {
+        "150_300": -49.812912581753245,
+        "300_600": -55.839592408288105
+      },
+      "reference_valid": true,
+      "full_eligible": false,
+      "cap60_wet_source_sha256": "18b78edc162edc8dda1fbacc15448de30af8a63529d2cf54315c44e57884e504",
+      "cap60_clean_source_sha256": "5741a3865dae59af662bf9e707d2a5b93d57c355518119e172bf521536ad1e78",
+      "cap60_wet_elapsed_s": 7.251421140041202,
+      "cap60_clean_elapsed_s": 7.181471970980056
+    },
+    {
+      "t60_s": 1.7,
+      "direct_to_reverb_db": -9.0,
+      "seed": 1334958170,
+      "shared_scale": 0.570994793310839,
+      "w1_w2_tail_db": {
+        "150_300": -47.62011948642649,
+        "300_600": -52.44195667002529
+      },
+      "reference_valid": true,
+      "full_eligible": false,
+      "cap60_wet_source_sha256": "bcaa0edeb3637912a55a49883080b42bf54c8ef9e309816fdf94ed260f8fa04c",
+      "cap60_clean_source_sha256": "827c1b12a462a51808b70e59ebeff52838f30a4b5e9729fdda088b17a9c33c1d",
+      "cap60_wet_elapsed_s": 7.098097470938228,
+      "cap60_clean_elapsed_s": 7.0403631730005145
+    },
+    {
+      "t60_s": 1.7,
+      "direct_to_reverb_db": -12.0,
+      "seed": 1334958170,
+      "shared_scale": 0.405188755613733,
+      "w1_w2_tail_db": {
+        "150_300": -44.637498262156825,
+        "300_600": -49.26927902249473
+      },
+      "reference_valid": true,
+      "full_eligible": true,
+      "cap60_wet_source_sha256": "0d790ac3d6c8443b44dc14542b75e43af0896a8379c4961d89e7841a604a84a8",
+      "cap60_clean_source_sha256": "ad817807942a9e91fd55486a987970b5886d391a25cda522cfaecb6bdbedd2c5",
+      "cap60_wet_elapsed_s": 7.172889966983348,
+      "cap60_clean_elapsed_s": 7.093189729028381
+    }
+  ],
+  "test_wav_accessed": false
+}

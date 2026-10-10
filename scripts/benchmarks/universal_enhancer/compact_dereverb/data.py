@@ -41,6 +41,8 @@ def make_procedural_rir(
     seed: int,
     t60_s: float,
     direct_to_reverb_db: float,
+    max_t60_s: float = 1.20,
+    min_direct_to_reverb_db: float = -6.0,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Create a simple randomized RIR and its <=50 ms / >50 ms components.
 
@@ -48,10 +50,10 @@ def make_procedural_rir(
     at `t60_s`; a random one-pole low-pass adds mild frequency-dependent decay.
     This is a controlled synthetic operator, not a measured-room simulator.
     """
-    if sr <= 0 or not 0.25 <= t60_s <= 1.20:
-        raise ValueError("sr must be positive and t60_s must be in [0.25, 1.20]")
-    if not -6.0 <= direct_to_reverb_db <= 18.0:
-        raise ValueError("direct_to_reverb_db must be in [-6, 18]")
+    if sr <= 0 or not 0.25 <= t60_s <= max_t60_s or max_t60_s > 3.0:
+        raise ValueError(f"sr must be positive and t60_s must be in [0.25, {max_t60_s}]")
+    if not min_direct_to_reverb_db <= direct_to_reverb_db <= 18.0:
+        raise ValueError(f"direct_to_reverb_db must be in [{min_direct_to_reverb_db}, 18]")
 
     rng = np.random.default_rng(seed)
     # `t60_s` is the time to a 60 dB amplitude decay, not the RIR duration.
