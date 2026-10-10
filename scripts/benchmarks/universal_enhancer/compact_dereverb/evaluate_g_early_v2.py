@@ -101,11 +101,44 @@ def speech_truth_stats(clean: np.ndarray, output: np.ndarray,
 
 
 def validate_evaluator_binding(config: dict) -> str | None:
-    """Require the evaluator that was frozen into the fit configuration."""
+    """Require the frozen evaluator or a fully bound mechanical amendment."""
     current_sha = sha(HERE / "evaluate_g_early_v2.py")
-    if config.get("evaluator_source_sha256") != current_sha:
-        raise RuntimeError("evaluator differs from the prefit frozen source hash")
-    return None
+    original_sha = config.get("evaluator_source_sha256")
+    if original_sha == current_sha:
+        return None
+    amendment_path = EXPERIMENT / "evaluation-code-amendment.json"
+    if not amendment_path.is_file():
+        raise RuntimeError("evaluator source changed without a run-bound amendment")
+    amendment = json.loads(amendment_path.read_text())
+    checkpoint = EXPERIMENT / "G-early-v2-clean/checkpoints/step-003000.pt"
+    model_config = EXPERIMENT / "G-early-v2-clean/model-config.json"
+    required = {
+        "name": "G-early-v2-evaluator-mechanical-amendment-v1",
+        "protocol_version": "G-early-v2-real-2026-10-10",
+        "original_evaluator_source_sha256": original_sha,
+        "corrected_evaluator_source_sha256": current_sha,
+        "model_config_sha256": sha(model_config),
+        "checkpoint_sha256": sha(checkpoint),
+        "training_manifest_sha256": sha(EXPERIMENT / "data/training-data-manifest.json"),
+        "training_pair_manifest_sha256": sha(EXPERIMENT / "data/pairs.jsonl"),
+        "dev_manifest_sha256": sha(EXPERIMENT / "splits/dev/manifest.json"),
+        "prior_dev_attempt_receipt_sha256": sha(EXPERIMENT / "dev-attempt-001.json"),
+        "synthetic_mechanism_check_sha256": sha(
+            EXPERIMENT / "synthetic-evaluator-mechanism-check.json"),
+        "pass_number": 2,
+        "correction_scope": "remove the extra [0] index only from descriptive gain_only/phase_only reduction inputs",
+        "actual_path_unchanged": True,
+        "numeric_gates_unchanged": True,
+        "weights_changed": False,
+        "prior_dev_summary_written": False,
+        "prior_dev_decision_written": False,
+        "prior_dev_metrics_inspected": False,
+        "holdout_forwarded": False,
+        "test_wav_accessed": False,
+    }
+    if any(amendment.get(key) != value for key, value in required.items()):
+        raise RuntimeError("evaluator amendment does not match the frozen G2 run")
+    return sha(amendment_path)
 
 
 def load_g_model(variant: str, device: torch.device) -> tuple[torch.nn.Module, Path, dict]:
@@ -615,6 +648,8 @@ def run_split(split: str, requested_winner: str | None, device_name: str,
                 decision.get("winner_checkpoint_sha256") != sha(
                     EXPERIMENT / requested_winner / "checkpoints/step-003000.pt") or
                 decision.get("evaluator_source_sha256") != sha(HERE / "evaluate_g_early_v2.py") or
+                decision.get("evaluation_code_amendment_sha256") != sha(
+                    EXPERIMENT / "evaluation-code-amendment.json") or
                 decision.get("training_source_sha256") != sha(HERE / "train_g_early_v2.py") or
                 decision.get("split_freeze_source_sha256") != sha(HERE / "freeze_g_early_v2_splits.py") or
                 decision.get("training_manifest_sha256") != sha(
@@ -746,6 +781,7 @@ def run_split(split: str, requested_winner: str | None, device_name: str,
         "training_manifest_sha256": sha(data_manifest_path),
         "evaluation_code_amendment_sha256": validate_evaluator_binding(
             json.loads((EXPERIMENT / variants[0] / "model-config.json").read_text())),
+        "dev_evaluation_pass_number": (2 if split == "dev" else None),
         "frozen_reference_audit": reference_audit,
         "split_manifest_sha256": sha(split_manifest_path),
         "training_pair_manifest_sha256": sha(data_path),
@@ -839,6 +875,9 @@ def run_split(split: str, requested_winner: str | None, device_name: str,
             "winner": winner, "winner_state": winner_state, "rule": rule,
             "gate_states": summary["gates_by_variant"][winner],
             "evaluator_source_sha256": sha(HERE / "evaluate_g_early_v2.py"),
+            "evaluation_code_amendment_sha256": sha(
+                EXPERIMENT / "evaluation-code-amendment.json"),
+            "dev_evaluation_pass_number": 2,
             "training_source_sha256": sha(HERE / "train_g_early_v2.py"),
             "split_freeze_source_sha256": sha(HERE / "freeze_g_early_v2_splits.py"),
             "prior_dev_attempt_receipt_sha256": sha(prior_dev_attempt_path),
