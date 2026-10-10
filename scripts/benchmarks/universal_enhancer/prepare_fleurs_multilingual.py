@@ -125,6 +125,8 @@ def locales_from_files(files: dict[str, dict]) -> list[str]:
 
 def row_manifest(tsv: bytes) -> dict[str, dict]:
     rows: dict[str, dict] = {}
+    # Some FLEURS transcripts exceed csv's conservative 128 KiB default.
+    csv.field_size_limit(16 * 1024 * 1024)
     reader = csv.reader(io.StringIO(tsv.decode("utf-8")), delimiter="\t")
     for fields in reader:
         if len(fields) < 2:
@@ -134,7 +136,6 @@ def row_manifest(tsv: bytes) -> dict[str, dict]:
             raise ValueError(f"Unexpected unsafe FLEURS audio path: {fields[1]!r}")
         rows[audio_name] = {
             "row_id": fields[0],
-            "gender": fields[5] if len(fields) > 5 else None,
             "num_samples": int(fields[4]) if len(fields) > 4 and fields[4].isdigit() else None,
         }
     return rows
@@ -191,7 +192,7 @@ def extract_split(archive: Path, tsv_rows: dict[str, dict], out_dir: Path,
                     raise RuntimeError(f"Expected mono 16 kHz source, got {info.samplerate} Hz/{info.channels}ch: {member.name}")
             records.append({
                 "locale": locale, "split": split, "row_id": meta["row_id"],
-                "speaker_id": None, "gender": meta["gender"],
+                "speaker_id": None,
                 "path": str(target.relative_to(ROOT)), "sha256": hashlib.sha256(payload).hexdigest() if payload is not None else sha256_file(target),
                 "sample_rate_hz": int(info.samplerate), "channels": int(info.channels),
                 "duration_seconds": float(info.duration), "frames": int(info.frames),
@@ -280,6 +281,9 @@ def main() -> None:
         "records": manifest.get("records", []),
         "completed_splits": manifest.get("completed_splits", []),
     })
+    # Older interrupted runs may contain a mis-indexed optional TSV column.
+    for record in manifest["records"]:
+        record.pop("gender", None)
     completed = set(manifest["completed_splits"])
     # The TSV's numeric row id is not unique; the archive member is.
     existing_records = {(r["locale"], r["split"], r["source_member"]): r for r in manifest["records"]}
