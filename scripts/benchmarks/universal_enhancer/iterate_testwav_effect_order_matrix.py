@@ -58,7 +58,7 @@ def peaking(x: np.ndarray, fc: float, q: float, gain_db: float) -> np.ndarray:
     return lfilter(b / a[0], a / a[0], x)
 
 
-def shelf(x: np.ndarray, fc: float, gain_db: float, slope: float = .8) -> np.ndarray:
+def low_shelf(x: np.ndarray, fc: float, gain_db: float, slope: float = .8) -> np.ndarray:
     A = 10 ** (gain_db / 40)
     w = 2 * np.pi * fc / SR
     c, s = np.cos(w), np.sin(w)
@@ -70,6 +70,21 @@ def shelf(x: np.ndarray, fc: float, gain_db: float, slope: float = .8) -> np.nda
     a = np.array([(A + 1) + (A - 1) * c + beta,
                   -2 * ((A - 1) + (A + 1) * c),
                   (A + 1) + (A - 1) * c - beta])
+    return lfilter(b / a[0], a / a[0], x)
+
+
+def high_shelf(x: np.ndarray, fc: float, gain_db: float, slope: float = .8) -> np.ndarray:
+    A = 10 ** (gain_db / 40)
+    w = 2 * np.pi * fc / SR
+    c, s = np.cos(w), np.sin(w)
+    alpha = s / 2 * np.sqrt((A + 1 / A) * (1 / slope - 1) + 2)
+    beta = 2 * np.sqrt(A) * alpha
+    b = np.array([A * ((A + 1) + (A - 1) * c + beta),
+                  -2 * A * ((A - 1) + (A + 1) * c),
+                  A * ((A + 1) + (A - 1) * c - beta)])
+    a = np.array([(A + 1) - (A - 1) * c + beta,
+                  2 * ((A - 1) - (A + 1) * c),
+                  (A + 1) - (A - 1) * c - beta])
     return lfilter(b / a[0], a / a[0], x)
 
 
@@ -196,13 +211,16 @@ def main() -> None:
     hf = .5 * hp * gate
 
     def gentle_eq(z: np.ndarray) -> np.ndarray:
-        return shelf(peaking(z, 3500, .72, 1.5), 5500, 2.0)
+        return high_shelf(peaking(z, 3500, .72, 1.5), 5500, 2.0)
 
-    base = gentle_eq(stu + hf)
+    current, current_sr = read(BASE / "stupase-presence-matrix-02/12.wav")
+    if current_sr != SR or len(current) < n:
+        raise ValueError("Missing or misaligned frozen current-chain reference.")
+    current = current[:n]
+    base = low_shelf(current, 180, 1.5)
     # Same EQ is moved before HF residual addition, so the restored branch is untouched.
     order = gentle_eq(stu) + hf
-    order = shelf(order, 180, 1.5)
-    base = shelf(base, 180, 1.5)
+    order = low_shelf(order, 180, 1.5)
     comp, comp_gr = soft_compressor(base)
     deess, deess_gr = deesser(base)
 
@@ -210,8 +228,7 @@ def main() -> None:
     pre, timing = {}, {}
     for kind in ("presence", "bass"):
         pre[kind], timing[kind] = infer_preeq(cap, kind, OUT / f"_internal_stupase_preeq_{kind}.wav")
-    pre_presence = gentle_eq(pre["presence"] + hf)
-    pre_presence = shelf(pre_presence, 180, 1.5)
+    pre_presence = low_shelf(gentle_eq(pre["presence"] + hf), 180, 1.5)
     pre_bass = gentle_eq(pre["bass"] + hf)
 
     variants = {

@@ -23,7 +23,7 @@
 - [x] Add safeguards and measurements: tail level, active/weak/onset preservation, active band energy, peaks/clipping, compressor gain-reduction distribution, de-esser activity.
 - [x] Render mono 48 kHz PCM WAVs, a compact metrics CSV/JSON, a comparison plot, and an audition README with anonymized A–F players.
 - [x] Check output duration, levels, finite samples, and clipping; do not add new general tests.
-- [ ] Review `git diff --cached`, commit only the three new generic artifacts, then push the current checkpoint to the existing `fork` branch.
+- [x] Review `git diff --cached`, commit only the three new generic artifacts, then push the current checkpoint to the existing `fork` branch. A follow-up correction fixes the high-shelf stage and frozen baseline.
 
 ## Review Checkpoints
 
