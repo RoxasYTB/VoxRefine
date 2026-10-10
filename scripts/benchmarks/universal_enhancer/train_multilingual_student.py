@@ -204,8 +204,7 @@ def main() -> None:
             continue
         identity = (step % 5 == 0)
         if identity:
-            noisy = clean.to(device)
-            target = clean.to(device)
+            noisy, target = normalize_pair(clean.to(device), clean.to(device))
         else:
             noisy = corrupt(clean, noise_bank, rng, device, mode="mixed")
             noisy, target = normalize_pair(clean.to(device), noisy)
