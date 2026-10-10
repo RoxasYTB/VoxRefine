@@ -69,17 +69,19 @@ def validate(model: MultilingualStudent, rows_by_locale: dict[str, list[dict]],
         torch.cuda.manual_seed_all(seed)
     model.eval()
     measures: dict[str, list[dict[str, float]]] = {m: [] for m in ("clean", "noise", "room", "mixed")}
-    for locale in sorted(rows_by_locale):
+    for locale_index, locale in enumerate(sorted(rows_by_locale)):
         rows = rows_by_locale[locale]
-        selected = rows if len(rows) <= clips_per_locale else rng.sample(rows, clips_per_locale)
+        locale_rng = random.Random(seed + locale_index * 1_000_003)
+        selected = rows if len(rows) <= clips_per_locale else locale_rng.sample(rows, clips_per_locale)
         for row in selected:
             try:
-                clean = read_crop(row, seconds, rng).to(device)
+                clean = read_crop(row, seconds, locale_rng).to(device)
             except (OSError, RuntimeError, ValueError):
                 continue
             clean = clean / clean.square().mean().sqrt().clamp_min(1e-4)
-            for mode in measures:
-                inp = clean if mode == "clean" else corrupt(clean, noise_bank, rng, device, mode=mode)
+            for mode_index, mode in enumerate(measures):
+                mode_rng = random.Random(seed + locale_index * 1_000_003 + mode_index * 97_409)
+                inp = clean if mode == "clean" else corrupt(clean, noise_bank, mode_rng, device, mode=mode)
                 with torch.autocast(device_type=device.type, dtype=torch.float16,
                                     enabled=device.type == "cuda"):
                     pred = model(inp[None])[0]
@@ -99,11 +101,13 @@ def validate(model: MultilingualStudent, rows_by_locale: dict[str, list[dict]],
         summaries[mode] = {key: float(np.mean([row[key] for row in rows])) for key in rows[0]}
         summaries[mode]["clips"] = len(rows)
     summaries["locales"] = len(rows_by_locale)
-    # A restoration score rewards noise/room recovery and penalizes clean-speech drift.
+    # Heavily protect clean speech: the product must remain close to identity when
+    # the input is already usable. This is a model-selection score, not a MOS.
     summaries["selection_score"] = (
         (summaries["noise"]["mrstft_log_l1"] + summaries["room"]["mrstft_log_l1"] +
          summaries["mixed"]["mrstft_log_l1"]) / 3.0 +
-        0.5 * summaries["clean"]["mrstft_log_l1"] +
+        2.0 * summaries["clean"]["mrstft_log_l1"] +
+        0.5 * summaries["clean"]["wave_l1"] +
         0.03 * max(0.0, summaries["mixed"]["peak"] - 1.0)
     )
     return summaries
