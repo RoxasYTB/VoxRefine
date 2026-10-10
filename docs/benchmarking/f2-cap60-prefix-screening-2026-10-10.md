@@ -76,3 +76,45 @@ calibration. The prefix gate must stay tied to these hashes and settings. The
 subsequent 48-slot data-generation run and its independent coverage audit are
 still required before either E2/F2 fit can start. A fresh sealed holdout remains
 untouched until both fits clear the development gates.
+
+## Guarded clean-reference scale surrogate
+
+The exact prefix calibration above still requires two Cap60 calls per candidate.
+A second, narrower calibration checks whether the active clean-reference energy
+(`Eref`) can be estimated from an exact Cap60(clean) reference at another
+candidate scale. Across 64 comparisons from 8 slots, the maximum observed
+absolute `Eref` normalization error was `0.0395213443 dB`; the mean absolute
+error was `0.0040095242 dB`. The positive control used a full-eligible candidate
+(slot 0, candidate 85): its error was `−0.00652756 dB`, and the surrogate did not
+reject it.
+
+For a candidate clean scale `s_i` and exact reference scale `s_0`, the estimate
+is
+
+```text
+Eref_hat_i = Eref_0 × (s_i / s_0)²
+L_hat = 10 log10(Ewet_prefix / Eref_hat_i)
+```
+
+The observed maximum is not a guaranteed bound. The operational guard adds
+1 dB: `B = 1.0395213443 dB`. A surrogate can reject only if either estimated
+window is at or below `−50 − B = −51.0395213443 dB`. Otherwise both full
+Cap60(wet) and Cap60(clean) are run and the original strict `> −50 dB`
+criterion decides. Candidate scales outside `[0.3397839838, 1.0000001490]`
+run full Cap60(clean) even for screening. The first in-range candidate in each
+slot establishes an exact full-length clean reference. Thus this shortcut can
+only reject; it cannot accept or promote a candidate.
+
+Every full-processed surrogate candidate checks the actual `Eref` error and
+compares exact-target prefix scores to full-utterance scores. Error above the
+observed `0.0395213443 dB` is logged. Error above `1.0395213443 dB`, or any
+prefix/full score drift above `0.01 dB`, writes an invalidation marker and stops
+data generation. The independent tailbank audit refuses an invalidated cache.
+
+This is a measured runtime optimization for the frozen Cap60 binary and the
+specified scale range, not a general property of DeepFilterNet. The 64-case
+study uses only 8 speakers/slots and 8 spaced candidate indices; the positive
+control confirms that one eligible candidate is retained, but does not prove a
+universal error bound. Reports are `scale-equivariance-report.json` and
+`positive-scale-surrogate-check.json` in this directory. Both explicitly mark
+`test_wav_accessed: false`.

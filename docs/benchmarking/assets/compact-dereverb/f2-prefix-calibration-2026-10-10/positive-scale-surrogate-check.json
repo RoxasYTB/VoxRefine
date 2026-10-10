@@ -1,0 +1,27 @@
+{
+  "name": "F2-scale-surrogate-positive-control-v1",
+  "tail_slot": 0,
+  "candidate_index": 85,
+  "reference_candidate_index": 0,
+  "candidate_scale": 0.5719306288320201,
+  "reference_scale": 0.848126685507696,
+  "candidate_scale_in_calibration_range": true,
+  "eref_actual": 2.8223138044556516e-05,
+  "eref_predicted": 2.8265590063987534e-05,
+  "eref_error_db": -0.006527561116247809,
+  "calibrated_abs_error_bound_db": 0.03952134427315273,
+  "surrogate_prefix_tail_db": {
+    "150_300": -48.7871993445998,
+    "300_600": -49.94261011986971
+  },
+  "screen_reject_threshold_db": -51.039522,
+  "full_tail_db": {
+    "150_300": -48.78067207586892,
+    "300_600": -49.9360828512892
+  },
+  "full_eligible": true,
+  "surrogate_would_reject": false,
+  "passed": true,
+  "deep_filter_sha256": "70775e251eee44c0f2451a1e833326cf8bcbbe304d3e7cd12851e6fce72ef7da",
+  "test_wav_accessed": false
+}

@@ -33,8 +33,14 @@ MAX_CANDIDATES = 256
 TAIL_THRESHOLD_DB = -50.0
 PREFIX_CONTEXT_AFTER_PAUSE_SAMPLES = 25_600
 PREFIX_SCREEN_MARGIN_DB = 1.0
-PREFIX_CALIBRATION = (ROOT / "docs/benchmarking/assets/compact-dereverb/"
-    "f2-prefix-calibration-2026-10-10/prefix-1600ms-common-activity-report.json")
+CALIBRATION_ASSETS = (ROOT / "docs/benchmarking/assets/compact-dereverb/"
+    "f2-prefix-calibration-2026-10-10")
+PREFIX_CALIBRATION = CALIBRATION_ASSETS / "prefix-1600ms-common-activity-report.json"
+SCALE_CALIBRATION = CALIBRATION_ASSETS / "scale-equivariance-report.json"
+SCALE_POSITIVE_CONTROL = CALIBRATION_ASSETS / "positive-scale-surrogate-check.json"
+SCALE_SURROGATE_OBSERVED_ERROR_DB = 0.03952134427315273
+SCALE_SURROGATE_SAFETY_DB = 1.0
+SCALE_SURROGATE_OPERATIONAL_BOUND_DB = SCALE_SURROGATE_OBSERVED_ERROR_DB + SCALE_SURROGATE_SAFETY_DB
 
 
 def seed_for(slot: int, candidate: int, namespace: str = "F2-tailbank") -> int:
@@ -87,6 +93,7 @@ def tail_input_levels(reference_crop: np.ndarray, cap_input_crop: np.ndarray,
     return {"reference_valid": True,
         "reference_active_samples": int(reference.sum()) * hop,
         "window_db": levels,
+        "reference_energy": eref,
         "eligible": all(value > TAIL_THRESHOLD_DB for value in levels.values())}
 
 
@@ -114,10 +121,13 @@ def load_schedule() -> list[dict]:
 
 
 def load_prefix_screening_policy(schedule_path: Path, executable: Path) -> tuple[dict, str]:
-    """Fail closed unless the fixed 64-case Cap60 prefix calibration passes."""
-    if not PREFIX_CALIBRATION.is_file():
-        raise RuntimeError(f"missing prefix-screen calibration: {PREFIX_CALIBRATION}")
+    """Fail closed unless prefix and clean-reference surrogate calibrations match."""
+    for path in (PREFIX_CALIBRATION, SCALE_CALIBRATION, SCALE_POSITIVE_CONTROL):
+        if not path.is_file():
+            raise RuntimeError(f"missing screening calibration artifact: {path}")
     report = json.loads(PREFIX_CALIBRATION.read_text())
+    scale = json.loads(SCALE_CALIBRATION.read_text())
+    positive = json.loads(SCALE_POSITIVE_CONTROL.read_text())
     schedule_hash = sha256(schedule_path)
     exe_hash = sha256(executable)
     if (report.get("empirical_prefix_gate_pass") is not True or
@@ -128,13 +138,40 @@ def load_prefix_screening_policy(schedule_path: Path, executable: Path) -> tuple
             report.get("max_waveform_error", float("inf")) >= 1e-7 or
             report.get("max_abs_window_level_delta_db", float("inf")) >= .01 or
             report.get("eligibility_disagreements") != 0):
-        raise RuntimeError("prefix screen is not backed by its required matching 64-case calibration")
+        raise RuntimeError("prefix screen is not backed by its matching 64-case calibration")
     margins = report.get("per_window_screening_margin_db", {})
     if any(float(margins.get(key, 0)) < PREFIX_SCREEN_MARGIN_DB
            for key in ("150_300", "300_600")):
-        raise RuntimeError("prefix screening safety margin is below the required 1dB")
-    report_hash = sha256(PREFIX_CALIBRATION)
-    return report, report_hash
+        raise RuntimeError("prefix screening safety margin is below 1dB")
+    observed_error = float(scale.get("max_abs_eref_error_db", float("inf")))
+    if (scale.get("name") != "F2-Cap60-scale-equivariance-v1" or
+            scale.get("source_schedule_sha256") != schedule_hash or
+            scale.get("deep_filter_sha256") != exe_hash or
+            scale.get("test_wav_accessed") is not False or
+            scale.get("no_false_negative_at_1db_margin") is not True or
+            scale.get("false_negative_count_at_bound_plus_1db") != 0 or
+            abs(observed_error - SCALE_SURROGATE_OBSERVED_ERROR_DB) > 1e-12):
+        raise RuntimeError("scale surrogate is not backed by its matching frozen calibration")
+    if (positive.get("passed") is not True or
+            positive.get("full_eligible") is not True or
+            positive.get("surrogate_would_reject") is not False or
+            positive.get("deep_filter_sha256") != exe_hash or
+            positive.get("test_wav_accessed") is not False):
+        raise RuntimeError("scale surrogate positive control failed")
+    if (float(scale.get("candidate_scale_min", 0)) <= 0 or
+            float(scale.get("candidate_scale_max", 0)) <= 0):
+        raise RuntimeError("invalid scale calibration envelope")
+    policy = {"prefix": sha256(PREFIX_CALIBRATION),
+        "scale": sha256(SCALE_CALIBRATION), "positive": sha256(SCALE_POSITIVE_CONTROL),
+        "observed_eref_error_bound_db": observed_error,
+        "operational_eref_error_bound_db": SCALE_SURROGATE_OPERATIONAL_BOUND_DB,
+        "scale_min": float(scale["candidate_scale_min"]),
+        "scale_max": float(scale["candidate_scale_max"]),
+        "threshold_db": TAIL_THRESHOLD_DB, "prefix_context_after_pause_ms": 1600}
+    policy_hash = hashlib.sha256(json.dumps(policy, sort_keys=True,
+        separators=(",", ":")).encode()).hexdigest()
+    return {"prefix": report, "scale": scale, "positive": positive,
+        "policy": policy}, policy_hash
 
 
 def index_cap60_cache(cache_dir: Path) -> dict[str, tuple[Path, Path]]:
@@ -206,13 +243,21 @@ def prepare(args) -> dict:
         if (progress.get("source_schedule_manifest_sha256") != schedule_sha or
                 progress.get("deep_filter_sha256") != sha256(args.deep_filter)):
             raise RuntimeError("partial cache belongs to a different frozen schedule or Cap60 binary")
+        if progress.get("screen_surrogate_invalidated"):
+            raise RuntimeError("screen surrogate was invalidated; this partial cache must be regenerated")
         result_rows = progress.get("completed_rows", [])
         if progress.get("selection_policy_sha256") != prefix_policy_hash:
-            if any(row.get("kind") == "rir_only" for row in result_rows):
-                raise RuntimeError("partial cache uses a different RIR selection policy")
+            tail_rows = [row for row in result_rows if row.get("kind") == "rir_only"]
+            unsafe = any(any(item.get("screening_reference_mode") == "scale_surrogate"
+                for item in row.get("rir_recipe", {}).get("candidate_history", []))
+                for row in tail_rows)
+            if unsafe:
+                raise RuntimeError("partial cache contains surrogate rows from a different policy")
             progress["selection_policy_sha256"] = prefix_policy_hash
-            progress["prefix_calibration_sha256"] = prefix_policy_hash
-            progress["selection_policy_migration"] = "safe: no tailbank rows were completed"
+            progress["prefix_calibration_sha256"] = sha256(PREFIX_CALIBRATION)
+            progress["scale_calibration_sha256"] = sha256(SCALE_CALIBRATION)
+            progress["positive_control_sha256"] = sha256(SCALE_POSITIVE_CONTROL)
+            progress["selection_policy_migration"] = "safe: existing tail slots used exact clean-prefix/full selection"
             progress_tmp = progress_path.with_suffix(".json.tmp")
             progress_tmp.write_text(json.dumps(progress, allow_nan=False) + "\n")
             progress_tmp.replace(progress_path)
@@ -220,6 +265,13 @@ def prepare(args) -> dict:
             raise RuntimeError("partial cache is not a contiguous prefix of the frozen schedule")
     else:
         result_rows = []
+    progress = {"source_schedule_manifest_sha256": schedule_sha,
+        "deep_filter_sha256": sha256(args.deep_filter),
+        "selection_policy_sha256": prefix_policy_hash,
+        "prefix_calibration_sha256": sha256(PREFIX_CALIBRATION),
+        "scale_calibration_sha256": sha256(SCALE_CALIBRATION),
+        "positive_control_sha256": sha256(SCALE_POSITIVE_CONTROL),
+        "completed_rows": result_rows, "test_wav_accessed": False}
     completed_indices = {int(row["index"]) for row in result_rows}
     selection_counts = [{"slot": int(row["rir_recipe"]["tail_slot"]),
         "resolved": True, "candidates_tested": int(row["rir_recipe"]["candidates_tested"])}
@@ -261,16 +313,19 @@ def prepare(args) -> dict:
             selected_target = None
             candidate_history = []
             tail_slot = slot
+            scale_report = prefix_policy["scale"]
+            scale_min = float(scale_report["candidate_scale_min"])
+            scale_max = float(scale_report["candidate_scale_max"])
+            scale_reference = None
+            reference_candidate_index = None
+            target_reference = None
+            target_reference_meta = None
             for candidate in range(MAX_CANDIDATES):
                 candidate_seed = seed_for(tail_slot, candidate)
                 t60_s, drr_db = candidate_parameters(candidate_seed)
                 rir, _, _ = make_procedural_rir(SR, candidate_seed, t60_s, drr_db)
                 pair_data = measured_pair(clean, rir)
                 candidate_key = f"tailbank-{tail_slot:02d}-candidate-{candidate:03d}"
-                # measured_pair chooses a shared peak scale from both the dry
-                # and candidate-specific wet signal. Therefore its clean target
-                # can change with the RIR and Cap60(clean) must be recomputed
-                # for each candidate to keep Eref in the same amplitude domain.
                 target_key = f"tailbank-{tail_slot:02d}-target-candidate-{candidate:03d}"
                 measure_end = global_pause + 9_600
                 measure_count = measure_end - crop_start
@@ -279,20 +334,53 @@ def prepare(args) -> dict:
                 prefix_end = global_pause + PREFIX_CONTEXT_AFTER_PAUSE_SAMPLES
                 if prefix_end > len(clean):
                     raise RuntimeError(f"prefix screening context falls outside tail slot {tail_slot}")
+                shared_scale = float(np.max(np.abs(pair_data["clean"]))) / max(
+                    float(np.max(np.abs(clean))), 1e-8)
+                scale_in_range = scale_min <= shared_scale <= scale_max
                 prefix_input_key = f"tailbank-screen-{tail_slot:02d}-candidate-{candidate:03d}"
-                prefix_target_key = f"tailbank-screen-{tail_slot:02d}-target-{candidate:03d}"
                 cap_prefix, prefix_meta = cap60_cached(args.deep_filter,
                     pair_data["reverberant"][:prefix_end], output,
                     prefix_input_key, cache, reuse_index)
-                cap_target_prefix, prefix_target_meta = cap60_cached(
-                    args.deep_filter, pair_data["clean"][:prefix_end], output,
-                    prefix_target_key, cache, reuse_index)
+
+                # Candidate 0 is an exact full-length Cap60(clean) reference.
+                # Out-of-envelope candidates also use exact full-length targets;
+                # the surrogate is never extrapolated beyond the calibration.
+                exact_target_reason = ("reference_exact_full" if target_reference is None
+                    else "scale_outside_calibration_full_fallback" if not scale_in_range
+                    else None)
+                cap_target_candidate = None
+                target_candidate_meta = None
+                if exact_target_reason is not None:
+                    cap_target_candidate, target_candidate_meta = cap60_cached(
+                        args.deep_filter, pair_data["clean"], output,
+                        target_key, cache, reuse_index)
+                    target_prefix = cap_target_candidate[:prefix_end]
+                    if scale_in_range and target_reference is None:
+                        scale_reference = shared_scale
+                        reference_candidate_index = candidate
+                        target_reference = cap_target_candidate
+                        target_reference_meta = target_candidate_meta
+                        exact_target_reason = "reference_exact_full"
+                    reference_mode = "exact_full_target"
+                    reference_source_hash = target_candidate_meta["source_sha256"]
+                    reference_scale = shared_scale
+                else:
+                    ratio = shared_scale / float(scale_reference)
+                    target_prefix = target_reference[:prefix_end] * np.float32(ratio)
+                    reference_mode = "scale_surrogate"
+                    exact_target_reason = None
+                    reference_source_hash = target_reference_meta["source_sha256"]
+                    reference_scale = float(scale_reference)
+
                 prefix_measurements = tail_input_levels(
-                    cap_target_prefix[crop_start:measure_end] * gain,
+                    target_prefix[crop_start:measure_end] * gain,
                     cap_prefix[crop_start:measure_end] * gain,
                     pause_in_crop, activity_clean_crop=clean_crop)
                 prefix_levels = prefix_measurements.get("window_db", {})
-                reject_thresholds = {key: TAIL_THRESHOLD_DB - PREFIX_SCREEN_MARGIN_DB
+                reject_threshold_value = TAIL_THRESHOLD_DB - PREFIX_SCREEN_MARGIN_DB
+                if reference_mode == "scale_surrogate":
+                    reject_threshold_value = TAIL_THRESHOLD_DB - SCALE_SURROGATE_OPERATIONAL_BOUND_DB
+                reject_thresholds = {key: reject_threshold_value
                     for key in ("150_300", "300_600")}
                 screened_out = any(prefix_levels.get(key) is not None and
                     float(prefix_levels[key]) <= reject_thresholds[key]
@@ -300,11 +388,23 @@ def prepare(args) -> dict:
                 candidate_record = {"candidate_index": candidate,
                     "seed": candidate_seed, "t60_s": t60_s,
                     "direct_to_reverb_db": drr_db,
-                    "target_source_sha256": prefix_target_meta["source_sha256"],
-                    "prefix_target_source_sha256": prefix_target_meta["source_sha256"],
+                    "target_source_sha256": (target_candidate_meta["source_sha256"]
+                        if target_candidate_meta else None),
+                    "prefix_target_source_sha256": (target_candidate_meta["source_sha256"]
+                        if target_candidate_meta else None),
                     "prefix_input_source_sha256": prefix_meta["source_sha256"],
-                    "shared_scale": float(np.max(np.abs(pair_data["clean"]))) /
-                        max(float(np.max(np.abs(clean))), 1e-8),
+                    "shared_scale": shared_scale,
+                    "scale_in_calibration_range": scale_in_range,
+                    "screening_reference_mode": reference_mode,
+                    "reference_candidate_index": (candidate if reference_mode == "exact_full_target"
+                        and scale_reference == shared_scale else reference_candidate_index),
+                    "reference_scale": reference_scale,
+                    "reference_source_sha256": reference_source_hash,
+                    "scale_ratio": (1.0 if reference_mode == "exact_full_target"
+                        else shared_scale / float(scale_reference)),
+                    "scale_calibration_error_bound_db": (
+                        SCALE_SURROGATE_OPERATIONAL_BOUND_DB
+                        if reference_mode == "scale_surrogate" else 0.0),
                     "prefix_input_tail_db": prefix_levels,
                     "prefix_reject_threshold_db": reject_thresholds,
                     "prefix_screened_out": bool(screened_out),
@@ -315,10 +415,14 @@ def prepare(args) -> dict:
                     candidate_history.append(candidate_record)
                     continue
 
+                # Full wet and clean signals decide every candidate that could
+                # pass. Exact targets already computed above are reused.
                 cap_candidate, candidate_meta = cap60_cached(args.deep_filter,
                     pair_data["reverberant"], output, candidate_key, cache, reuse_index)
-                cap_target_candidate, target_candidate_meta = cap60_cached(
-                    args.deep_filter, pair_data["clean"], output, target_key, cache, reuse_index)
+                if cap_target_candidate is None:
+                    cap_target_candidate, target_candidate_meta = cap60_cached(
+                        args.deep_filter, pair_data["clean"], output,
+                        target_key, cache, reuse_index)
                 measurements = tail_input_levels(
                     cap_target_candidate[crop_start:measure_end] * gain,
                     cap_candidate[crop_start:measure_end] * gain,
@@ -326,8 +430,38 @@ def prepare(args) -> dict:
                 eligible = bool(measurements.get("eligible", False))
                 candidate_record.update({"target_source_sha256": target_candidate_meta["source_sha256"],
                     "input_tail_db": measurements.get("window_db"),
+                    "full_target_reference_energy": measurements.get("reference_energy"),
                     "eligible": eligible,
                     "reason": "accept_full" if eligible else "full_reject"})
+                if reference_mode == "scale_surrogate":
+                    surrogate_energy = float(prefix_measurements["reference_energy"])
+                    exact_energy = float(measurements["reference_energy"])
+                    eref_error_db = float(10 * np.log10(exact_energy / surrogate_energy))
+                    exact_prefix_levels = tail_input_levels(
+                        cap_target_candidate[crop_start:measure_end] * gain,
+                        cap_prefix[crop_start:measure_end] * gain,
+                        pause_in_crop, activity_clean_crop=clean_crop).get("window_db", {})
+                    prefix_full_delta = {key: float(exact_prefix_levels[key] -
+                        measurements["window_db"][key]) for key in ("150_300", "300_600")}
+                    candidate_record["eref_surrogate_error_db"] = eref_error_db
+                    candidate_record["prefix_vs_full_exact_target_window_delta_db"] = prefix_full_delta
+                    if abs(eref_error_db) > SCALE_SURROGATE_OBSERVED_ERROR_DB:
+                        candidate_record["eref_bound_warning"] = True
+                    severe_error = abs(eref_error_db) > SCALE_SURROGATE_OPERATIONAL_BOUND_DB
+                    prefix_drift = max(abs(value) for value in prefix_full_delta.values()) > .01
+                    if severe_error or prefix_drift:
+                        invalidation = {"reason": "surrogate_calibration_bound_exceeded" if severe_error
+                            else "prefix_full_exact_drift_exceeded",
+                            "tail_slot": tail_slot, "candidate_index": candidate,
+                            "eref_surrogate_error_db": eref_error_db,
+                            "operational_eref_bound_db": SCALE_SURROGATE_OPERATIONAL_BOUND_DB,
+                            "prefix_full_exact_window_delta_db": prefix_full_delta,
+                            "test_wav_accessed": False}
+                        progress["screen_surrogate_invalidated"] = invalidation
+                        progress_tmp = progress_path.with_suffix(".json.tmp")
+                        progress_tmp.write_text(json.dumps(progress, allow_nan=False) + "\n")
+                        progress_tmp.replace(progress_path)
+                        raise RuntimeError("scale surrogate calibration invalidated; stop and re-audit all generated tail slots")
                 candidate_history.append(candidate_record)
                 if eligible:
                     input_full, cap_meta = cap_candidate, candidate_meta
@@ -341,12 +475,16 @@ def prepare(args) -> dict:
                         "input_tail_db": measurements["window_db"],
                         "prefix_context_after_pause_ms": 1600,
                         "prefix_screening_margin_db": PREFIX_SCREEN_MARGIN_DB,
-                        "prefix_calibration_sha256": prefix_policy_hash,
+                        "prefix_calibration_sha256": sha256(PREFIX_CALIBRATION),
+                        "scale_calibration_sha256": sha256(SCALE_CALIBRATION),
+                        "positive_control_sha256": sha256(SCALE_POSITIVE_CONTROL),
+                        "screening_policy_sha256": prefix_policy_hash,
+                        "scale_surrogate_operational_error_bound_db": SCALE_SURROGATE_OPERATIONAL_BOUND_DB,
                         "input_only_selection": True,
                         "candidate_history": candidate_history}
                     break
                 # Discard full-run rejects after their measurements; exact-hash
-                # reuse keeps any canonical copy referenced by another key.
+                # reuse keeps canonical outputs alive when referenced elsewhere.
                 (cache / f"{candidate_key}.npy").unlink(missing_ok=True)
                 (cache / f"{candidate_key}.json").unlink(missing_ok=True)
                 canonical_target = reuse_index.get(target_candidate_meta["source_sha256"])
@@ -367,7 +505,10 @@ def prepare(args) -> dict:
                     "threshold_db": TAIL_THRESHOLD_DB,
                     "prefix_screening_margin_db": PREFIX_SCREEN_MARGIN_DB,
                     "prefix_context_after_pause_ms": 1600,
-                    "prefix_calibration_sha256": prefix_policy_hash,
+                    "prefix_calibration_sha256": sha256(PREFIX_CALIBRATION),
+                    "scale_calibration_sha256": sha256(SCALE_CALIBRATION),
+                    "positive_control_sha256": sha256(SCALE_POSITIVE_CONTROL),
+                    "screening_policy_sha256": prefix_policy_hash,
                     "input_only_selection": True,
                     "test_wav_accessed": False}, indent=2) + "\n")
                 raise RuntimeError(f"F2 tailbank slot {tail_slot} unresolved after {MAX_CANDIDATES} candidates")
@@ -442,13 +583,14 @@ def prepare(args) -> dict:
             "cap60_target": None if kind == "identity" else target_meta}
         result_rows.append(output_row)
         progress_tmp = progress_path.with_suffix(".json.tmp")
-        progress_tmp.write_text(json.dumps({
-            "source_schedule_manifest_sha256": schedule_sha,
+        progress.update({"source_schedule_manifest_sha256": schedule_sha,
             "deep_filter_sha256": sha256(args.deep_filter),
             "selection_policy_sha256": prefix_policy_hash,
-            "prefix_calibration_sha256": prefix_policy_hash,
-            "completed_rows": result_rows,
-            "test_wav_accessed": False}, allow_nan=False) + "\n")
+            "prefix_calibration_sha256": sha256(PREFIX_CALIBRATION),
+            "scale_calibration_sha256": sha256(SCALE_CALIBRATION),
+            "positive_control_sha256": sha256(SCALE_POSITIVE_CONTROL),
+            "completed_rows": result_rows, "test_wav_accessed": False})
+        progress_tmp.write_text(json.dumps(progress, allow_nan=False) + "\n")
         progress_tmp.replace(progress_path)
         print(json.dumps({"row": index, "kind": kind,
             "resolved_tail_slots": slot,
@@ -471,13 +613,20 @@ def prepare(args) -> dict:
         "candidate_namespace": "F2-tailbank|slot|candidate-index",
         "candidate_max_per_slot": MAX_CANDIDATES,
         "candidate_parameter_policy": "RT60 U[0.45,1.10]s; DRR U[-6,18]dB using existing procedural generator",
-        "selection_policy": "candidates with either prefix tail <= -51dB are screened out; ambiguous candidates are processed full-length; first full candidate with both Cap60 input tail windows > -50dB is selected",
+        "selection_policy": "reject-only 1600ms Cap60 wet prefix; clean Eref uses a guarded scale surrogate in the frozen calibration envelope, with an operational 1.039521dB bound; out-of-envelope targets use full exact Cap60(clean); full exact wet+clean alone can accept",
         "prefix_context_after_pause_ms": 1600,
         "prefix_screening_margin_db": PREFIX_SCREEN_MARGIN_DB,
-        "prefix_screen_reject_db": {"150_300": -51.0, "300_600": -51.0},
-        "prefix_calibration_report_sha256": prefix_policy_hash,
-        "prefix_calibration_cases": prefix_policy.get("completed_candidates"),
-        "prefix_calibration_gate_pass": prefix_policy.get("empirical_prefix_gate_pass"),
+        "prefix_reject_db_exact_target": {"150_300": -51.0, "300_600": -51.0},
+        "scale_surrogate_reject_db": {"150_300": TAIL_THRESHOLD_DB - SCALE_SURROGATE_OPERATIONAL_BOUND_DB,
+            "300_600": TAIL_THRESHOLD_DB - SCALE_SURROGATE_OPERATIONAL_BOUND_DB},
+        "scale_surrogate_observed_eref_error_db": SCALE_SURROGATE_OBSERVED_ERROR_DB,
+        "scale_surrogate_operational_eref_error_bound_db": SCALE_SURROGATE_OPERATIONAL_BOUND_DB,
+        "prefix_calibration_report_sha256": sha256(PREFIX_CALIBRATION),
+        "scale_calibration_report_sha256": sha256(SCALE_CALIBRATION),
+        "scale_positive_control_sha256": sha256(SCALE_POSITIVE_CONTROL),
+        "selection_policy_sha256": prefix_policy_hash,
+        "prefix_calibration_cases": prefix_policy["prefix"].get("completed_candidates"),
+        "prefix_calibration_gate_pass": prefix_policy["prefix"].get("empirical_prefix_gate_pass"),
         "activity_mask_crop_samples": CROP_SAMPLES,
         "tail_measurement_end_after_pause_ms": 600,
         "input_only_selection": True, "resolved_tail_slots": slot,

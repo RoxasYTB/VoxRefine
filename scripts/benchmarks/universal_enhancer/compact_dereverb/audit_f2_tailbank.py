@@ -14,7 +14,9 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[3]
 sys.path.insert(0, str(HERE))
 from prepare_f2_tailbank import (  # noqa: E402
-    candidate_parameters, seed_for, tail_input_levels,
+    DEEP_FILTER, C_DATA, SCALE_SURROGATE_OBSERVED_ERROR_DB,
+    SCALE_SURROGATE_OPERATIONAL_BOUND_DB, candidate_parameters,
+    load_prefix_screening_policy, seed_for, tail_input_levels,
 )
 
 EXPERIMENT = ROOT / ".tools/compact-dereverb/e2-f2-tailbank-2026-10-10"
@@ -42,12 +44,32 @@ def audit(data_dir: Path, output: Path) -> dict:
         issues.append("pair manifest hash mismatch")
     if meta.get("resolved_tail_slots") != 48:
         issues.append("tailbank did not resolve exactly 48 slots")
-    calibration_path = (ROOT / "docs/benchmarking/assets/compact-dereverb/"
-        "f2-prefix-calibration-2026-10-10/prefix-margin-1600ms.json")
-    if (not calibration_path.is_file() or
-            meta.get("prefix_calibration_report_sha256") != sha(calibration_path) or
-            meta.get("prefix_calibration_gate_pass") is not True):
-        issues.append("prefix screen is not tied to the passing frozen calibration")
+    calibration_dir = (ROOT / "docs/benchmarking/assets/compact-dereverb/"
+        "f2-prefix-calibration-2026-10-10")
+    calibration_paths = {"prefix": calibration_dir / "prefix-1600ms-common-activity-report.json",
+        "scale": calibration_dir / "scale-equivariance-report.json",
+        "positive": calibration_dir / "positive-scale-surrogate-check.json"}
+    if any(not path.is_file() for path in calibration_paths.values()):
+        issues.append("one or more frozen prefix/surrogate calibration artifacts are missing")
+    else:
+        if (meta.get("prefix_calibration_report_sha256") != sha(calibration_paths["prefix"]) or
+                meta.get("scale_calibration_report_sha256") != sha(calibration_paths["scale"]) or
+                meta.get("scale_positive_control_sha256") != sha(calibration_paths["positive"]) or
+                meta.get("prefix_calibration_gate_pass") is not True or
+                abs(float(meta.get("scale_surrogate_operational_eref_error_bound_db", -1)) -
+                    SCALE_SURROGATE_OPERATIONAL_BOUND_DB) > 1e-12):
+            issues.append("screening policy is not tied to the passing frozen calibration artifacts")
+    progress_path = data_dir / "progress.json"
+    if progress_path.is_file():
+        progress_meta = json.loads(progress_path.read_text())
+        if progress_meta.get("screen_surrogate_invalidated"):
+            issues.append("surrogate was invalidated; generated tailbank rows require regeneration/audit")
+    try:
+        _, policy_hash = load_prefix_screening_policy(C_DATA / "pairs.jsonl", DEEP_FILTER)
+        if meta.get("selection_policy_sha256") != policy_hash:
+            issues.append("manifest screening policy hash does not match recalculated calibration policy")
+    except Exception as exc:
+        issues.append(f"could not validate frozen screening policy: {type(exc).__name__}: {exc}")
     tail_rows = [row for row in rows if row.get("kind") == "rir_only"]
     row_checks = []
     for tail_slot, row in enumerate(tail_rows):
@@ -67,6 +89,11 @@ def audit(data_dir: Path, output: Path) -> dict:
         history = recipe.get("candidate_history", [])
         chosen_index = recipe.get("candidate_index")
         recorded = recipe.get("input_tail_db", {})
+        if any(item.get("screening_reference_mode") == "scale_surrogate" for item in history):
+            if (recipe.get("scale_calibration_sha256") != sha(calibration_paths["scale"]) or
+                    recipe.get("positive_control_sha256") != sha(calibration_paths["positive"]) or
+                    recipe.get("screening_policy_sha256") != meta.get("selection_policy_sha256")):
+                issues.append(f"row {row.get('index')} surrogate history has stale calibration hashes")
         candidate_specs_valid = True
         for candidate_index, candidate_row in enumerate(history):
             candidate_seed = seed_for(tail_slot, candidate_index)
@@ -74,8 +101,16 @@ def audit(data_dir: Path, output: Path) -> dict:
             levels = candidate_row.get("input_tail_db") or {}
             prefix_levels = candidate_row.get("prefix_input_tail_db") or {}
             thresholds = candidate_row.get("prefix_reject_threshold_db") or {}
+            mode = candidate_row.get("screening_reference_mode", "exact_prefix_target")
+            expected_threshold = ({"150_300": -51.0, "300_600": -51.0}
+                if mode in ("exact_prefix_target", "exact_full_target") else
+                {"150_300": -50.0 - SCALE_SURROGATE_OPERATIONAL_BOUND_DB,
+                 "300_600": -50.0 - SCALE_SURROGATE_OPERATIONAL_BOUND_DB})
             expected_screen_reject = any(prefix_levels.get(key) is not None and
-                float(prefix_levels[key]) <= -51.0 for key in ("150_300", "300_600"))
+                float(prefix_levels[key]) <= expected_threshold[key]
+                for key in ("150_300", "300_600"))
+            thresholds_valid = all(abs(float(thresholds.get(key, 0)) -
+                expected_threshold[key]) < 1e-9 for key in ("150_300", "300_600"))
             screened = bool(candidate_row.get("prefix_screened_out"))
             reason = candidate_row.get("reason")
             if reason == "prefix_screen_reject":
@@ -91,6 +126,17 @@ def audit(data_dir: Path, output: Path) -> dict:
             else:
                 expected_eligible = False
                 score_policy_valid = False
+            if mode == "scale_surrogate":
+                error = candidate_row.get("eref_surrogate_error_db")
+                deltas = candidate_row.get("prefix_vs_full_exact_target_window_delta_db")
+                if error is not None:
+                    score_policy_valid &= (abs(float(error)) <= SCALE_SURROGATE_OPERATIONAL_BOUND_DB and
+                        isinstance(deltas, dict) and all(abs(float(deltas.get(key, 999))) <= .01
+                        for key in ("150_300", "300_600")))
+                if candidate_row.get("scale_in_calibration_range") is not True:
+                    score_policy_valid = False
+            elif mode not in ("exact_prefix_target", "exact_full_target"):
+                score_policy_valid = False
             candidate_specs_valid &= (
                 int(candidate_row.get("seed", -1)) == candidate_seed and
                 int(candidate_row.get("candidate_index", -1)) == candidate_index and
@@ -98,10 +144,9 @@ def audit(data_dir: Path, output: Path) -> dict:
                 abs(float(candidate_row.get("direct_to_reverb_db", -99)) - drr) < 1e-12 and
                 bool(candidate_row.get("eligible")) == expected_eligible and
                 all((prefix_levels.get(key) is None or
-                     np.isfinite(float(prefix_levels[key]))) and
-                    abs(float(thresholds.get(key, 0)) + 51.0) < 1e-12
+                     np.isfinite(float(prefix_levels[key])))
                     for key in ("150_300", "300_600")) and
-                score_policy_valid)
+                thresholds_valid and score_policy_valid)
         level_error = max((abs(float(measured["window_db"][key]) - float(recorded[key]))
                            for key in ("150_300", "300_600")
                            if measured.get("window_db", {}).get(key) is not None
@@ -130,7 +175,7 @@ def audit(data_dir: Path, output: Path) -> dict:
             "max_abs_level_error_db": level_error})
     if len(row_checks) != 48:
         issues.append("did not audit all 48 tailbank arrays")
-    result = {"name": "E2-F2-tailbank-coverage-audit-v1",
+    result = {"name": "E2-F2-tailbank-coverage-audit-v2",
         "pair_manifest_sha256": sha(pair_path),
         "training_data_manifest_sha256": sha(manifest_path),
         "row_count": len(rows), "kind_counts": counts,
