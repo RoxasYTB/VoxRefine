@@ -118,7 +118,9 @@ def load_g_model(variant: str, device: torch.device) -> tuple[torch.nn.Module, P
             config.get("training_source_sha256") != sha(HERE / "train_g_early_v2.py") or
             config.get("split_freeze_source_sha256") != sha(HERE / "freeze_g_early_v2_splits.py") or
             config.get("split_audit_source_sha256") != sha(HERE / "audit_g_early_v2_splits.py") or
-            config.get("split_audit_sha256") != sha(EXPERIMENT / "split-integrity-audit.json")):
+            config.get("split_audit_sha256") != sha(EXPERIMENT / "split-integrity-audit.json") or
+            config.get("gradient_diagnostic_inertness_sha256") != sha(
+                EXPERIMENT / "gradient-diagnostic-inertness-v2.json")):
         raise RuntimeError(f"{variant} is missing a frozen step-3000 checkpoint/config")
     validate_evaluator_binding(config)
     state = torch.load(checkpoint, map_location="cpu", weights_only=False)

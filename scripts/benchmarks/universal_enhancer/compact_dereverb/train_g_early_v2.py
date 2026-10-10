@@ -92,6 +92,101 @@ def flat_gradient_stats(left, right) -> tuple[float, float, float | None]:
     return ln, rn, cosine
 
 
+def optimizer_tensors_equal(left: dict, right: dict) -> bool:
+    if left.keys() != right.keys():
+        return False
+    for key in left:
+        a, b = left[key], right[key]
+        if isinstance(a, torch.Tensor):
+            if not isinstance(b, torch.Tensor) or not torch.equal(a, b):
+                return False
+        elif isinstance(a, dict):
+            if not isinstance(b, dict) or not optimizer_tensors_equal(a, b):
+                return False
+        elif isinstance(a, (list, tuple)):
+            if type(a) is not type(b) or len(a) != len(b):
+                return False
+            for av, bv in zip(a, b):
+                if isinstance(av, torch.Tensor):
+                    if not isinstance(bv, torch.Tensor) or not torch.equal(av, bv):
+                        return False
+                elif av != bv:
+                    return False
+        elif a != b:
+            return False
+    return True
+
+
+def audit_gradient_diagnostic_inertness(init_state: dict, device: torch.device) -> dict:
+    """Prove autograd.grad diagnostics do not change one deterministic update."""
+    py_state, np_state = random.getstate(), np.random.get_state()
+    cpu_rng = torch.get_rng_state()
+    cuda_rng = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
+    try:
+        n = 32_000
+        t = np.arange(n, dtype=np.float64) / SR
+        envelope = np.clip((t - .04) / .05, 0, 1) * np.clip((.68 - t) / .04, 0, 1)
+        clean_np = (envelope * (.36 * np.sin(2*np.pi*137*t) +
+            .14 * np.sin(2*np.pi*274*t + .23) + .06 * np.sin(2*np.pi*411*t + .51))).astype(np.float32)
+        wet_np = clean_np.copy()
+        for k in range(1, 24):
+            delay = round((.018*k + .002*((k+1) % 3)) * SR)
+            wet_np[delay:] += np.float32(.34 * .78**k) * clean_np[:-delay]
+        clean = torch.from_numpy(clean_np)[None].to(device)
+        wet = torch.from_numpy(wet_np)[None].to(device)
+        pause = torch.tensor([11_200], dtype=torch.long, device=device)
+        eligible = torch.tensor([True], dtype=torch.bool, device=device)
+        fixture_sha = hashlib.sha256(clean_np.tobytes() + wet_np.tobytes()).hexdigest()
+        models, optimizers = [], []
+        for _ in range(2):
+            model = CompactAttenuationOnlyDereverbG2(base_channels=16).to(device)
+            model.load_state_dict(init_state)
+            model.train()
+            models.append(model)
+            optimizers.append(torch.optim.AdamW(model.parameters(), lr=2e-4, weight_decay=1e-4))
+        diagnostic_values = None
+        preclip_norms = []
+        for model, optimizer, enabled in zip(models, optimizers, (False, True)):
+            optimizer.zero_grad(set_to_none=True)
+            pred = model(wet)
+            speech, components = cap60_conditioned_loss(pred, clean, clean)
+            quiet = quiet_loss(pred, clean, clean)
+            base = speech - .5 * components["floor"] + .5 * quiet
+            early, count = tail_loss(pred, wet, clean, clean, pause,
+                ("rir_only",), eligible)
+            if count != 1 or float(early.detach()) <= 0:
+                raise RuntimeError("synthetic diagnostic fixture must exercise a nonzero W1 gradient")
+            if enabled:
+                params = tuple(model.parameters())
+                base_grads = torch.autograd.grad(base, params, retain_graph=True, allow_unused=True)
+                early_grads = torch.autograd.grad(early, params, retain_graph=True, allow_unused=True)
+                norms = flat_gradient_stats(base_grads, early_grads)
+                diagnostic_values = {"base_gradient_norm": norms[0],
+                    "early_gradient_norm": norms[1], "base_early_cosine": norms[2]}
+            total = base + early
+            total.backward()
+            preclip_norms.append(float(torch.nn.utils.clip_grad_norm_(model.parameters(), 3.0)))
+            optimizer.step()
+        max_model_abs_diff = max(float((a.detach().cpu() - b.detach().cpu()).abs().max())
+            for a, b in zip(models[0].parameters(), models[1].parameters()))
+        if (max_model_abs_diff != 0.0 or preclip_norms[0] != preclip_norms[1] or
+                not optimizer_tensors_equal(optimizers[0].state_dict(), optimizers[1].state_dict())):
+            raise RuntimeError("gradient diagnostics changed the one-step model/optimizer update")
+        return {"passed": True, "max_parameter_abs_diff": max_model_abs_diff,
+            "preclip_norm_without_diagnostics": preclip_norms[0],
+            "preclip_norm_with_diagnostics": preclip_norms[1],
+            "optimizer_states_identical": True,
+            "diagnostics_observation_only": diagnostic_values,
+            "fixture_sha256": fixture_sha, "test_wav_accessed": False,
+            "corpus_files_read": False}
+    finally:
+        random.setstate(py_state)
+        np.random.set_state(np_state)
+        torch.set_rng_state(cpu_rng)
+        if cuda_rng is not None:
+            torch.cuda.set_rng_state_all(cuda_rng)
+
+
 def audit_training_inputs(dataset: TrainSet, args) -> dict:
     manifest_path = args.data_dir / "training-data-manifest.json"
     coverage_path = args.data_dir / "coverage-audit.json"
@@ -162,8 +257,6 @@ def train(args) -> dict:
         raise RuntimeError("G2 split audit is missing, stale, or already opened")
     if FIT.exists() and any(FIT.iterdir()):
         raise FileExistsError(f"refusing to overwrite existing fit: {FIT}")
-    FIT.mkdir(parents=True, exist_ok=True)
-
     model = CompactAttenuationOnlyDereverbG2(base_channels=16)
     count = parameter_count(model)
     if count != 555_922:
@@ -171,6 +264,20 @@ def train(args) -> dict:
     init_state = {name: tensor.detach().cpu().clone()
                   for name, tensor in model.state_dict().items()}
     init_sha = state_sha(model)
+    diagnostic_audit = audit_gradient_diagnostic_inertness(init_state, device)
+    diagnostic_audit.update({"initialization_sha256": init_sha,
+        "training_source_sha256": sha(Path(__file__)),
+        "model_source_sha256": sha(HERE / "model_g_early_v2.py"),
+        "torch_version": torch.__version__, "cuda_version": torch.version.cuda,
+        "device": str(device)})
+    diagnostic_path = EXPERIMENT / "gradient-diagnostic-inertness-v2.json"
+    if diagnostic_path.exists():
+        prior = json.loads(diagnostic_path.read_text())
+        if prior != diagnostic_audit:
+            raise RuntimeError("existing gradient-inertness receipt differs from this frozen fit")
+    else:
+        diagnostic_path.write_text(json.dumps(diagnostic_audit, indent=2, allow_nan=False) + "\n")
+    FIT.mkdir(parents=True, exist_ok=True)
     torch.save({"model": init_state, "seed": SEED, "initialization_sha256": init_sha,
                 "base_channels": 16, "test_wav_accessed": False},
                EXPERIMENT / "initial-state-v2.pt")
@@ -289,6 +396,7 @@ def train(args) -> dict:
         "coverage_sha256": data_audit["coverage_sha256"],
         "split_index_sha256": sha(split_index),
         "split_audit_sha256": sha(split_audit_path),
+        "gradient_diagnostic_inertness_sha256": sha(diagnostic_path),
         "batch_order_sha256": order_sha, "device": str(device),
         "torch_version": torch.__version__, "cuda_version": torch.version.cuda,
         "gpu_name": torch.cuda.get_device_name(0) if device.type == "cuda" else None,
