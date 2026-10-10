@@ -74,6 +74,14 @@ def make_fixtures() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
 
 def early_loss(pred: torch.Tensor, x: torch.Tensor, clean: torch.Tensor,
                tail_reference: torch.Tensor, pause: int = PAUSE_SAMPLE) -> torch.Tensor:
+    if pred.ndim == 2:
+        if pred.shape[0] != 1 or x.shape[0] != 1 or clean.shape[0] != 1:
+            raise ValueError("synthetic W1 loss accepts one fixture at a time")
+        pred, x, clean = pred[0], x[0], clean[0]
+        if tail_reference.ndim == 2:
+            tail_reference = tail_reference[0]
+    if pred.ndim != 1 or x.ndim != 1 or clean.ndim != 1 or tail_reference.ndim != 1:
+        raise ValueError("synthetic W1 loss expects one-dimensional fixture signals")
     frames = clean.unfold(-1, 320, 160)
     rms = (frames.square().mean(-1) + 1e-24).sqrt()
     active = rms >= torch.maximum(rms.max() * 0.02, rms.new_tensor(1e-5))
