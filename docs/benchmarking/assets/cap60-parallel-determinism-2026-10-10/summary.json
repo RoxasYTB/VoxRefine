@@ -1,0 +1,46 @@
+{
+  "name": "Cap60-independent-process-concurrency-summary-v1",
+  "fixture_manifest_sha256": "d6da3774071e7b526dae72781f3e58da7a99c1abbd7043c4ab4004c1a7474939",
+  "deep_filter_sha256": "70775e251eee44c0f2451a1e833326cf8bcbbe304d3e7cd12851e6fce72ef7da",
+  "input_sha256": {
+    "clean-short-quiet.wav": "16daf767e34aed7576035cf7bfe0008d9da9ac65b03ca71b782f6cb066e24036",
+    "clean-long-normal.wav": "95dc47b40c0a70cd1a4d6cdace0e19c2c3a6cfe83c0878dac989b9a4d836f0d0",
+    "reverb-long.wav": "adeb8f53a8a464ef855329a9b4a6b85730fd5b6981c7d3a90745e42b9a10384a",
+    "reverb-noise-long.wav": "f76a7882b65a33bdfb369525cc6c2eb39364ba131ad147a1e09bc798e4c464f3"
+  },
+  "configs": {
+    "threads_2": {
+      "thread_environment": {
+        "OMP_NUM_THREADS": "2",
+        "MKL_NUM_THREADS": "2",
+        "OPENBLAS_NUM_THREADS": "2"
+      },
+      "worker_count": 2,
+      "sequential_wall_s": 18.78760446398519,
+      "parallel_a_wall_s": 12.52172411303036,
+      "parallel_b_wall_s": 12.964839552063495,
+      "speedup_vs_sequential_using_slower_parallel_run": 1.4491197047629438,
+      "all_eight_pcm_comparisons_identical": true,
+      "all_max_sample_errors_zero": true,
+      "meets_two_worker_gate": false,
+      "pcm_comparison_count": 8
+    },
+    "threads_1": {
+      "thread_environment": {
+        "OMP_NUM_THREADS": "1",
+        "MKL_NUM_THREADS": "1",
+        "OPENBLAS_NUM_THREADS": "1"
+      },
+      "worker_count": 2,
+      "sequential_wall_s": 18.450486699934117,
+      "parallel_a_wall_s": 12.466843707021326,
+      "parallel_b_wall_s": 12.589377479045652,
+      "speedup_vs_sequential_using_slower_parallel_run": 1.4655598921109458,
+      "all_eight_pcm_comparisons_identical": true,
+      "all_max_sample_errors_zero": true,
+      "meets_two_worker_gate": false,
+      "pcm_comparison_count": 8
+    }
+  },
+  "test_wav_accessed": false
+}

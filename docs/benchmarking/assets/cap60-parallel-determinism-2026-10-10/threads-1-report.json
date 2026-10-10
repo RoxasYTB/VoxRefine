@@ -1,0 +1,90 @@
+{
+  "name": "Cap60-independent-process-concurrency-v1",
+  "deep_filter_sha256": "70775e251eee44c0f2451a1e833326cf8bcbbe304d3e7cd12851e6fce72ef7da",
+  "input_sha256": {
+    "clean-short-quiet.wav": "16daf767e34aed7576035cf7bfe0008d9da9ac65b03ca71b782f6cb066e24036",
+    "clean-long-normal.wav": "95dc47b40c0a70cd1a4d6cdace0e19c2c3a6cfe83c0878dac989b9a4d836f0d0",
+    "reverb-long.wav": "adeb8f53a8a464ef855329a9b4a6b85730fd5b6981c7d3a90745e42b9a10384a",
+    "reverb-noise-long.wav": "f76a7882b65a33bdfb369525cc6c2eb39364ba131ad147a1e09bc798e4c464f3"
+  },
+  "thread_environment": {
+    "OMP_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1",
+    "OPENBLAS_NUM_THREADS": "1"
+  },
+  "worker_count": 2,
+  "sequential_wall_s": 18.450486699934117,
+  "parallel_a_wall_s": 12.466843707021326,
+  "parallel_b_wall_s": 12.589377479045652,
+  "speedup_vs_sequential_using_slower_parallel_run": 1.4655598921109458,
+  "pcm_comparisons": [
+    {
+      "input": "clean-short-quiet.wav",
+      "run": "parallel-a",
+      "sequential_pcm_sha256": "303d9127dae7dd37937f08bcd4b10a246fb5d073e9b507dc6636300ce5da7099",
+      "parallel_pcm_sha256": "303d9127dae7dd37937f08bcd4b10a246fb5d073e9b507dc6636300ce5da7099",
+      "pcm_bit_identical": true,
+      "max_abs_sample_error": 0.0
+    },
+    {
+      "input": "clean-short-quiet.wav",
+      "run": "parallel-b",
+      "sequential_pcm_sha256": "303d9127dae7dd37937f08bcd4b10a246fb5d073e9b507dc6636300ce5da7099",
+      "parallel_pcm_sha256": "303d9127dae7dd37937f08bcd4b10a246fb5d073e9b507dc6636300ce5da7099",
+      "pcm_bit_identical": true,
+      "max_abs_sample_error": 0.0
+    },
+    {
+      "input": "clean-long-normal.wav",
+      "run": "parallel-a",
+      "sequential_pcm_sha256": "dc8e485ab72cd21eec3c2cfc9561e70d21b437b45ddbcf5122081d701d0a2894",
+      "parallel_pcm_sha256": "dc8e485ab72cd21eec3c2cfc9561e70d21b437b45ddbcf5122081d701d0a2894",
+      "pcm_bit_identical": true,
+      "max_abs_sample_error": 0.0
+    },
+    {
+      "input": "clean-long-normal.wav",
+      "run": "parallel-b",
+      "sequential_pcm_sha256": "dc8e485ab72cd21eec3c2cfc9561e70d21b437b45ddbcf5122081d701d0a2894",
+      "parallel_pcm_sha256": "dc8e485ab72cd21eec3c2cfc9561e70d21b437b45ddbcf5122081d701d0a2894",
+      "pcm_bit_identical": true,
+      "max_abs_sample_error": 0.0
+    },
+    {
+      "input": "reverb-long.wav",
+      "run": "parallel-a",
+      "sequential_pcm_sha256": "ae17a77acc8620d90dbf0d2b0ac50e228dff3b4556a9fa2e0cc2caac08859db4",
+      "parallel_pcm_sha256": "ae17a77acc8620d90dbf0d2b0ac50e228dff3b4556a9fa2e0cc2caac08859db4",
+      "pcm_bit_identical": true,
+      "max_abs_sample_error": 0.0
+    },
+    {
+      "input": "reverb-long.wav",
+      "run": "parallel-b",
+      "sequential_pcm_sha256": "ae17a77acc8620d90dbf0d2b0ac50e228dff3b4556a9fa2e0cc2caac08859db4",
+      "parallel_pcm_sha256": "ae17a77acc8620d90dbf0d2b0ac50e228dff3b4556a9fa2e0cc2caac08859db4",
+      "pcm_bit_identical": true,
+      "max_abs_sample_error": 0.0
+    },
+    {
+      "input": "reverb-noise-long.wav",
+      "run": "parallel-a",
+      "sequential_pcm_sha256": "6f301e6f7312a994a6713e785c0a820582ac7b62f89d830fae25b21762f72a85",
+      "parallel_pcm_sha256": "6f301e6f7312a994a6713e785c0a820582ac7b62f89d830fae25b21762f72a85",
+      "pcm_bit_identical": true,
+      "max_abs_sample_error": 0.0
+    },
+    {
+      "input": "reverb-noise-long.wav",
+      "run": "parallel-b",
+      "sequential_pcm_sha256": "6f301e6f7312a994a6713e785c0a820582ac7b62f89d830fae25b21762f72a85",
+      "parallel_pcm_sha256": "6f301e6f7312a994a6713e785c0a820582ac7b62f89d830fae25b21762f72a85",
+      "pcm_bit_identical": true,
+      "max_abs_sample_error": 0.0
+    }
+  ],
+  "all_eight_pcm_comparisons_identical": true,
+  "all_max_sample_errors_zero": true,
+  "meets_two_worker_gate": false,
+  "test_wav_accessed": false
+}

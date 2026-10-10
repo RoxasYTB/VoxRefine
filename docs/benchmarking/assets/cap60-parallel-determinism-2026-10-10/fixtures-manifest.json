@@ -1,0 +1,36 @@
+{
+  "name": "Cap60-concurrency-fixtures-v1",
+  "schedule_sha256": "d3d94fb0e7adcb7d0647cb65597b16f89dbb08281f6b442cd25f1a958dd65f31",
+  "cap60_sha256": "70775e251eee44c0f2451a1e833326cf8bcbbe304d3e7cd12851e6fce72ef7da",
+  "fixtures": {
+    "clean-short-quiet.wav": {
+      "sha256": "16daf767e34aed7576035cf7bfe0008d9da9ac65b03ca71b782f6cb066e24036",
+      "samples": 80000,
+      "duration_s": 5.0,
+      "peak": 0.14399999380111694,
+      "rms": 0.01563200168311596
+    },
+    "clean-long-normal.wav": {
+      "sha256": "95dc47b40c0a70cd1a4d6cdace0e19c2c3a6cfe83c0878dac989b9a4d836f0d0",
+      "samples": 424000,
+      "duration_s": 26.5,
+      "peak": 0.7999999523162842,
+      "rms": 0.08875386416912079
+    },
+    "reverb-long.wav": {
+      "sha256": "adeb8f53a8a464ef855329a9b4a6b85730fd5b6981c7d3a90745e42b9a10384a",
+      "samples": 424000,
+      "duration_s": 26.5,
+      "peak": 0.7999999523162842,
+      "rms": 0.10730671882629395
+    },
+    "reverb-noise-long.wav": {
+      "sha256": "f76a7882b65a33bdfb369525cc6c2eb39364ba131ad147a1e09bc798e4c464f3",
+      "samples": 424000,
+      "duration_s": 26.5,
+      "peak": 0.8010182976722717,
+      "rms": 0.11463025212287903
+    }
+  },
+  "test_wav_accessed": false
+}
