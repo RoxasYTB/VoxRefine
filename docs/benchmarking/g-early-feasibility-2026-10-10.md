@@ -81,3 +81,9 @@ Les deux premiers passages d’évaluation DEV ont parcouru 64 paires chacun, pu
 Amendement de code d’évaluation enregistré sous `.tools/compact-dereverb/g-early-2026-10-10/evaluation-code-amendment.json`: ancien SHA évaluation `84a0d7437801990a56fe82f9132f347c031b639d4aaa6f7354c3dd696eee52dd`; version corrigée `68095b299ebbc469a0cb78e3550a98576656e1b2863bfdb0094072e5edbf7451`; SHA de l’amendement `8a4fd7ce63e944992e7dfb80c7a3cc8cb2734b851d8d7561957c8c0598f6aef9`. Il lie ces versions aux hashes de train, poids et données. Le pré-audit input-only DEV confirme 64/64 références valides, écart maximal 0.000 dB vs manifest gelé (tolérance 0.01 dB), et fenêtre W1 disponible sur les 64 paires avec la définition corrigée. L’évaluation DEV est relancée avec la correction; aucun gate ne change.
 
 Ces PASS valident seulement la disponibilité statistique des exemples pour les fits. Ils ne démontrent encore aucune amélioration audio.
+
+## Résultat du premier fit G-early-v1
+
+Après l'ouverture unique de DEV16, les variantes clean et hybrid échouent au gate W1 `Mlow ≥ +2 dB` avec respectivement `+0,113 dB` (LCB95 locuteur `+0,045 dB`) et `+0,314 dB` (`+0,165 dB`). Hybrid échoue aussi plusieurs gates de préservation de parole. `selected_winner=null`; aucun reçu de décision n'existe pour ouvrir HOLDOUT12, qui reste fermé définitivement. Le rapport détaillé est [G-early-v1 DEV NO-GO](g-early-v1-dev-no-go-2026-10-10.md).
+
+Une v2 ne sera engagée qu'après un audit mécaniste synthétique autonome, selon le [plan G-early-v2](../superpowers/plans/2026-10-10-g-early-v2.md). Le résultat de faisabilité de ce document ne doit pas être confondu avec un résultat de modèle ou une preuve de qualité studio.
