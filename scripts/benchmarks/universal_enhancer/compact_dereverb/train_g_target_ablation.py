@@ -312,6 +312,50 @@ def train(args) -> list[str]:
         split_ids[name] = ids
     if split_ids["dev"] & split_ids["sealed"]:
         raise RuntimeError("G DEV and HOLDOUT-G speaker manifests overlap")
+    tail_rows = [row for row in rows if row["kind"] == "rir_only"]
+    tail_slots = sorted(int(row["rir_recipe"].get("tail_slot", -1)) for row in tail_rows)
+    if tail_slots != list(range(48)):
+        raise RuntimeError("G training tailbank slots must be the exact frozen 0..47 set")
+    for row in tail_rows:
+        recipe = row["rir_recipe"]
+        levels = recipe.get("input_tail_db", {})
+        history = recipe.get("candidate_history", [])
+        first_valid = bool(history and history[-1].get("eligible_from_input_only") and
+            [int(item["candidate_index"]) for item in history] ==
+            list(range(int(recipe.get("candidate_index", -1)) + 1)) and
+            not any(item.get("eligible_from_input_only") for item in history[:-1]))
+        if (not row.get("input_only_tail_eligible") or
+                not recipe.get("input_only_selection") or
+                not first_valid or
+                not 0 <= int(recipe.get("candidate_index", -1)) < 32 or
+                not 1.65 <= float(recipe.get("t60_s", 0)) <= 1.85 or
+                not -14.5 <= float(recipe.get("direct_to_reverb_db", 99)) <= -12.5 or
+                not all(float(levels.get(key, -100)) > -50
+                        for key in ("150_300", "300_600"))):
+            raise RuntimeError(f"invalid input-only strong-RIR gate at training row {row['index']}")
+    for name, expected_pairs in (("dev", 64), ("sealed", 48)):
+        split_doc = json.loads((args.experiment_dir / f"splits/{name}/manifest.json").read_text())
+        if sum(len(speaker["pairs"]) for speaker in split_doc["speakers"]) != expected_pairs:
+            raise RuntimeError(f"incomplete frozen G {name} pair coverage")
+        for speaker in split_doc["speakers"]:
+            if len(speaker["pairs"]) != 4:
+                raise RuntimeError(f"frozen G {name} requires exactly four RIRs per speaker")
+            for pair in speaker["pairs"]:
+                recipe = pair["procedural_rir"]
+                levels = recipe.get("input_tail_db", {})
+                history = pair.get("input_tail_selection_history", [])
+                first_valid = bool(history and history[-1].get("input_only_eligible") and
+                    [int(item["candidate_index"]) for item in history] ==
+                    list(range(int(recipe.get("candidate_index", -1)) + 1)) and
+                    not any(item.get("input_only_eligible") for item in history[:-1]))
+                if (not recipe.get("input_only_selection") or
+                        not first_valid or
+                        not 0 <= int(recipe.get("candidate_index", -1)) < 32 or
+                        not 1.65 <= float(recipe.get("t60_s", 0)) <= 1.85 or
+                        not -14.5 <= float(recipe.get("direct_to_reverb_db", 99)) <= -12.5 or
+                        not all(float(levels.get(key, -100)) > -50
+                                for key in ("150_300", "300_600"))):
+                    raise RuntimeError(f"invalid full-exact input-only {name} RIR recipe")
     for row in rows:
         for field, hash_field in (("x", "x_sha256"), ("c", "clean_target_sha256"),
                 ("a", "cap_target_sha256"), ("hybrid", "hybrid_target_sha256"),
