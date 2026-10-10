@@ -369,6 +369,8 @@ def run_split(split: str, requested_winner: str | None, device_name: str,
                 outputs, timings = {}, {}
                 for name in branches:
                     outputs[name], timings[name] = infer(model, caps[name], device)
+                    if not np.isfinite(outputs[name]).all() or float(np.max(np.abs(outputs[name]))) >= 1.0:
+                        raise RuntimeError(f"non-finite or clipped G output: {variant}/{name}")
                 speech, weak_fractions = speech_truth_stats(truth, outputs["dry"], pause)
                 noise = {"fan20": noise_stats(caps["noise20"], outputs["noise20"]),
                          "fan10": noise_stats(caps["noise10"], outputs["noise10"])}
@@ -395,6 +397,14 @@ def run_split(split: str, requested_winner: str | None, device_name: str,
                 print(json.dumps({"split": split, "pairs": pair_index,
                     "total": split_manifest["pair_count"],
                     "elapsed_s": time.perf_counter() - started}), flush=True)
+
+    if pair_index != int(split_manifest["pair_count"]):
+        raise RuntimeError("G evaluation did not cover every frozen speaker pair")
+    for row in rows:
+        for variant in variants:
+            bands = {item["band_ms"] for item in row["models"][variant]["tails"]}
+            if bands != {"150_300", "300_600"}:
+                raise RuntimeError("G tail evaluation is missing a preregistered interval")
 
     summary = {"protocol": split_manifest["name"],
         "split_manifest_sha256": sha(split_manifest_path),
