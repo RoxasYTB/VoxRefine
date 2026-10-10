@@ -11,6 +11,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from scipy.stats import theilslopes
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[3]
@@ -20,10 +21,13 @@ from data import make_procedural_rir  # noqa: E402
 from prepare_cap60_conditioned_pairs import (  # noqa: E402
     DEEP_FILTER, LIBRISPEECH, SR, cap60_one, make_fan_components,
 )
-from prepare_f2_tailbank import cap60_cached, index_cap60_cache  # noqa: E402
+from prepare_f2_tailbank import (  # noqa: E402
+    cap60_cached, crop, index_cap60_cache, tail_input_levels,
+)
+from pilot_g2_feasibility import active_dry_levels  # noqa: E402
 from screen_measured_rirs import infer, make_inserted_pause_pair, rms_frames  # noqa: E402
 from train_measured_mix import measured_pair  # noqa: E402
-from evaluate_e_synthetic_sealed import noise_stats, tail_slope, tail_stats  # noqa: E402
+from evaluate_e_synthetic_sealed import noise_stats  # noqa: E402
 
 EXPERIMENT = ROOT / ".tools/compact-dereverb/g-early-2026-10-10"
 SR, FRAME, HOP = 16_000, 320, 160
@@ -149,6 +153,129 @@ def assert_zero_100(model: torch.nn.Module, device: torch.device) -> int:
                 raise RuntimeError("zero-preserving invariant failed during 100/100 audit")
             count += 1
     return count
+
+
+def audit_frozen_tail_references(split: str, split_dir: Path,
+                                 split_manifest: dict) -> tuple[dict, dict]:
+    """Recreate each frozen Cap60 a_q reference before loading any model."""
+    cap_cache = split_dir / "cap60-cache"
+    references: dict[tuple[str, int], dict] = {}
+    valid_count, max_window_delta = 0, 0.0
+    primary_w1_count, available_w2_count = 0, 0
+    for speaker_index, speaker_doc in enumerate(split_manifest["speakers"]):
+        speaker = str(speaker_doc["speaker_id"])
+        files = {path.name: path for path in
+            (LIBRISPEECH / "train-clean-360" / speaker).glob("*/*.flac")}
+        for spec in speaker_doc["pairs"]:
+            paths = [files[spec[key]] for key in ("first", "second")]
+            if [sha(path) for path in paths] != [spec["first_sha256"], spec["second_sha256"]]:
+                raise RuntimeError("frozen source hash mismatch in Cap60 reference audit")
+            joined, pause = make_inserted_pause_pair(*paths)
+            joined = np.asarray(joined, dtype=np.float32)
+            joined *= .80 / max(float(np.max(np.abs(joined))), 1e-8)
+            crop_start, pause_crop = int(spec["crop_start_sample"]), int(spec["pause_start_in_crop"])
+            raw_clean_crop = crop(joined, crop_start)
+            tag = (f"{split}-{speaker_index:02d}-{int(spec['pair_index']):02d}-"
+                   f"{int(spec['candidate_index']):02d}")
+            frozen_dry_path, frozen_wet_path = cap_cache / f"{tag}-dry.npy", cap_cache / f"{tag}-wet.npy"
+            frozen_dry = np.load(frozen_dry_path, allow_pickle=False)
+            frozen_wet = np.load(frozen_wet_path, allow_pickle=False)
+            recipe = spec["procedural_rir"]
+            if (hashlib.sha256(np.asarray(frozen_dry, np.float32).tobytes()).hexdigest() !=
+                    recipe["dry_cap60_output_sha256"] or
+                    hashlib.sha256(np.asarray(frozen_wet, np.float32).tobytes()).hexdigest() !=
+                    recipe["wet_cap60_output_sha256"]):
+                raise RuntimeError("frozen selected Cap60 array hash differs from split manifest")
+            dry_crop, wet_crop = crop(frozen_dry, crop_start), crop(frozen_wet, crop_start)
+            measured = tail_input_levels(dry_crop, wet_crop, pause_crop,
+                activity_clean_crop=raw_clean_crop)
+            expected_windows = recipe["windows"]
+            if measured.get("reference_valid"):
+                valid_count += 1
+                dry_levels = active_dry_levels(dry_crop, pause_crop,
+                    float(measured["reference_energy"]))
+                for band in ("150_300", "300_600"):
+                    expected = expected_windows[band]
+                    actual_lx = measured["window_db"][band]
+                    actual_ldry = dry_levels[band]
+                    if (actual_lx is None or actual_ldry is None or
+                            abs(float(actual_lx) - float(expected["lx_db"])) > .01 or
+                            abs(float(actual_ldry) - float(expected["ldry_db"])) > .01):
+                        raise RuntimeError("recomputed Cap60 Eref/window differs from frozen input-only record")
+                    max_window_delta = max(max_window_delta,
+                        abs(float(actual_lx) - float(expected["lx_db"])),
+                        abs(float(actual_ldry) - float(expected["ldry_db"])))
+                reference_energy = float(measured["reference_energy"])
+            else:
+                if spec["tail_loss_enabled"]:
+                    raise RuntimeError("W1-eligible split row has no frozen Cap60 speech reference")
+                reference_energy = None
+            baseline_tails = g_tail_stats(frozen_dry, frozen_wet, frozen_wet,
+                frozen_dry, [frozen_dry, frozen_dry], pause, reference_energy)
+            available_bands = {item["band_ms"] for item in baseline_tails}
+            if spec["tail_loss_enabled"] and "150_300" not in available_bands:
+                raise RuntimeError("W1-eligible slot cannot produce its primary window with frozen Eref")
+            primary_w1_count += int("150_300" in available_bands)
+            available_w2_count += int("300_600" in available_bands)
+            references[(speaker, int(spec["pair_index"]))] = {
+                "reference_energy": reference_energy,
+                "reference_energy_sha256": (hashlib.sha256(
+                    np.asarray(reference_energy, dtype=np.float64).tobytes()).hexdigest()
+                    if reference_energy is not None else None),
+                "reference_valid": bool(measured.get("reference_valid")),
+                "frozen_selected_dry_sha256": recipe["dry_cap60_output_sha256"]}
+    audit = {"pair_count": len(references), "reference_valid_pair_count": valid_count,
+        "max_abs_frozen_window_delta_db": max_window_delta,
+        "primary_w1_window_count": primary_w1_count,
+        "available_w2_window_count": available_w2_count,
+        "w2_window_unavailable_count": len(references) - available_w2_count,
+        "tolerance_db": .01, "all_eligible_W1_references_valid": True}
+    return references, audit
+
+
+def g_tail_stats(clean_floor: np.ndarray, wet: np.ndarray, output: np.ndarray,
+                 dry_output: np.ndarray, noise_controls: list[np.ndarray],
+                 pause: dict, reference_energy: float | None) -> list[dict]:
+    """Tail levels normalized by the exact frozen input-only Cap60 a_q Eref."""
+    if reference_energy is None or reference_energy <= 0:
+        return []
+    start = int(pause["clip_relative_start_sample"])
+    result = []
+    energy = lambda value, a, b: float(np.mean(np.asarray(value[a:b], np.float64) ** 2))
+    for band, lo_ms, hi_ms in (("150_300", 150, 300), ("300_600", 300, 600)):
+        a, b = start + int(lo_ms * SR / 1000), start + int(hi_ms * SR / 1000)
+        if b > int(pause["second_speech_start_sample"]) - int(.20 * SR):
+            continue
+        if b > min(len(wet), len(output), len(dry_output), len(clean_floor),
+                   *(len(value) for value in noise_controls)):
+            continue
+        in_db = 10 * np.log10(max(energy(wet, a, b), 1e-30) / reference_energy)
+        out_db = 10 * np.log10(max(energy(output, a, b), 1e-30) / reference_energy)
+        floor_energy = max(energy(clean_floor, a, b), energy(dry_output, a, b),
+            *(energy(value, a, b) for value in noise_controls), 1e-30)
+        floor_db = 10 * np.log10(floor_energy / reference_energy)
+        result.append({"band_ms": band, "input_tail_db": float(in_db),
+            "output_tail_db": float(out_db), "common_floor_db": float(floor_db),
+            "input_censored": bool(in_db <= floor_db + 3),
+            "output_censored": bool(out_db <= floor_db + 3),
+            "tail_reduction_db": float(in_db - out_db),
+            "common_floor_censored": bool(in_db <= floor_db + 3 or
+                                           out_db <= floor_db + 3)})
+    return result
+
+
+def g_tail_slope(wet: np.ndarray, output: np.ndarray, pause: dict,
+                 reference_energy: float | None, common_floor_db: float) -> float | None:
+    if reference_energy is None or reference_energy <= 0:
+        return None
+    start = int(pause["clip_relative_start_sample"])
+    out_levels = rms_frames(output)
+    times = (np.arange(out_levels.size) * 160 + 160 - start) / SR
+    relative = 20 * np.log10(np.maximum(out_levels, 1e-12) /
+                             max(float(np.sqrt(reference_energy)), 1e-12))
+    keep = ((times >= .08) & (times <= .50) & np.isfinite(relative) &
+            (relative > common_floor_db + 3))
+    return float(theilslopes(relative[keep], times[keep]).slope) if int(keep.sum()) >= 8 else None
 
 
 def interval_for_tail(item: dict) -> tuple[float, float, str]:
@@ -421,6 +548,11 @@ def run_split(split: str, requested_winner: str | None, device_name: str,
         if decision.get("gate_states") != dev["gates_by_variant"][requested_winner]:
             raise RuntimeError("HOLDOUT-G decision gate states do not match the frozen DEV summary")
 
+    # Recreate and validate the exact frozen Cap60 a_q reference before model
+    # load/forward. The split decision and score then share one Eref definition.
+    frozen_references, reference_audit = audit_frozen_tail_references(
+        split, split_dir, split_manifest)
+
     device = torch.device("cuda" if device_name == "auto" and torch.cuda.is_available()
                           else "cpu" if device_name == "auto" else device_name)
     models, checkpoint_hashes = {}, {}
@@ -455,6 +587,7 @@ def run_split(split: str, requested_winner: str | None, device_name: str,
             clean, wet = pair["clean"], pair["reverberant"]
             mix20, noise20 = make_fan_components(clean, wet, int(spec["fan20_seed"]), 20)
             mix10, noise10 = make_fan_components(clean, wet, int(spec["fan10_seed"]), 10)
+            frozen_reference = frozen_references[(speaker, int(spec["pair_index"]))]
             scale = min(1.0, .95 / max(float(np.max(np.abs(clean))),
                 float(np.max(np.abs(wet))), float(np.max(np.abs(mix20))),
                 float(np.max(np.abs(mix10))), 1e-8))
@@ -485,14 +618,17 @@ def run_split(split: str, requested_winner: str | None, device_name: str,
                 speech, weak_fractions = speech_truth_stats(truth, outputs["dry"], pause)
                 noise = {"fan20": noise_stats(caps["noise20"], outputs["noise20"]),
                          "fan10": noise_stats(caps["noise10"], outputs["noise10"])}
-                tails = tail_stats(caps["dry"], caps["wet"], outputs["wet"],
+                tails = g_tail_stats(caps["dry"], caps["wet"], outputs["wet"],
                     outputs["dry"], [caps["noise20"], outputs["noise20"],
-                                     caps["noise10"], outputs["noise10"]], pause)
+                                     caps["noise10"], outputs["noise10"]], pause,
+                    frozen_reference["reference_energy"])
                 slopes = {}
                 for item in tails:
                     band, common = item["band_ms"], item["common_floor_db"]
-                    out_slope = tail_slope(caps["dry"], caps["wet"], outputs["wet"], pause, common)
-                    in_slope = tail_slope(caps["dry"], caps["wet"], caps["wet"], pause, common)
+                    out_slope = g_tail_slope(caps["wet"], outputs["wet"], pause,
+                        frozen_reference["reference_energy"], common)
+                    in_slope = g_tail_slope(caps["wet"], caps["wet"], pause,
+                        frozen_reference["reference_energy"], common)
                     slopes[band] = {"input_db_s": in_slope, "output_db_s": out_slope,
                         "delta_db_s": out_slope - in_slope
                             if out_slope is not None and in_slope is not None else None}
@@ -504,6 +640,8 @@ def run_split(split: str, requested_winner: str | None, device_name: str,
                 "rir_seed": int(rir_spec["seed"]), "shared_pre_cap_scale": scale,
                 "tail_eligible": bool(spec["tail_loss_enabled"]),
                 "classification": spec["classification"],
+                "frozen_reference_energy": frozen_reference["reference_energy"],
+                "frozen_reference_energy_sha256": frozen_reference["reference_energy_sha256"],
                 "models": model_metrics})
             pair_index += 1
             if pair_index % 4 == 0:
@@ -528,6 +666,7 @@ def run_split(split: str, requested_winner: str | None, device_name: str,
         "training_manifest_sha256": sha(data_manifest_path),
         "evaluation_code_amendment_sha256": validate_evaluator_binding(
             json.loads((EXPERIMENT / variants[0] / "model-config.json").read_text())),
+        "frozen_reference_audit": reference_audit,
         "split_manifest_sha256": sha(split_manifest_path),
         "training_pair_manifest_sha256": sha(data_path),
         "checkpoints": checkpoint_hashes, "pair_count": len(rows),
