@@ -184,10 +184,29 @@ def main() -> None:
                               "duration_s": len(x16) / 16_000})
 
     ripple_rows = []
+    dynamics_rows = []
     for name, x in matched.items():
         x16 = resample_poly(x, 1, 3)
         ripple_rows.append({"candidate": name,
                             **spectral_ripple_db(x16, voiced_starts, voiced_mask)})
+        env = frame_rms(x)
+        shared_active = active[:len(env)]
+        db = 20 * np.log10(np.maximum(env[shared_active], 1e-12))
+        frame_count = min(len(env), 1 + max(0, (len(x) - FRAME) // HOP))
+        starts = np.arange(frame_count) * HOP
+        selected_starts = starts[shared_active[:frame_count]]
+        peak = []
+        for start in selected_starts:
+            frame = x[start:start + FRAME]
+            rms = max(float(np.sqrt(np.mean(frame * frame))), 1e-12)
+            peak.append(20 * np.log10(max(float(np.max(np.abs(frame))), 1e-12) / rms))
+        dynamics_rows.append({
+            "candidate": name,
+            "active_rms_p90_minus_p10_db": float(np.percentile(db, 90) - np.percentile(db, 10)),
+            "frame_crest_factor_median_db": float(np.median(peak)),
+            "frame_crest_factor_p90_db": float(np.percentile(peak, 90)),
+            "n_common_active_frames": int(len(db)),
+        })
 
     rows = []
     for event_id, (_, end) in enumerate(events, 1):
@@ -267,6 +286,14 @@ def main() -> None:
                 "Interpret only beside listening and known dry/reverberant controls; not as a product score.",
             ],
         },
+        "active_dynamics": {
+            "definition": "P90-P10 of 20 ms frame RMS and median/P90 crest factor on the shared raw-input active-frame mask, after constant speech-RMS level matching",
+            "rows": dynamics_rows,
+            "limitations": [
+                "Describes amplitude statistics, not all perceptual meanings of compression or timbral flattening.",
+                "One short recording does not establish compressor settings or model behavior generally.",
+            ],
+        },
         "offsets": [{"event": i, "start_s": round(s / RATE, 4), "end_s": round(e / RATE, 4)} for i, (s, e) in enumerate(events, 1)],
         "limitations": [
             "Residual contains room response, noise, unvoiced speech, and model artifacts; there is no dry stem.",
@@ -327,6 +354,7 @@ def main() -> None:
     plt.close(ripple_fig)
     print(json.dumps({"events": metadata["offsets"], "srmr": srmr_rows,
                       "voiced_spectral_ripple": ripple_rows,
+                      "active_dynamics": dynamics_rows,
                       "valid_counts": {
         f"{a}-{b}ms": sum(1 for r in rows if r["candidate"] == "Cap60" and r["window_ms"] == f"{a}-{b}" and r["band"] == "broadband" and r["valid"])
         for a, b in WINDOWS_MS

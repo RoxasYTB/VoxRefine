@@ -77,6 +77,22 @@ Lecture prudente : StuPASE et ROSE lissent davantage la structure spectrale que 
 
 Le graphique correspondant est conservé à côté du pack local : `results/user-recording-test-2026-10-09/model-family-comparison-02/voiced_spectral_ripple.png`.
 
+## Dynamique d'amplitude, contrôle de l'impression « compressée »
+
+Sur le même masque brut commun (431 trames actives de 20 ms) et après égalisation RMS constante, j'ai mesuré l'écart P90–P10 du RMS de trame et le facteur de crête médian :
+
+| Rendu | RMS P90–P10 | Facteur de crête médian |
+|---|---:|---:|
+| Cap60 | 14,934 dB | 10,278 dB |
+| Adobe V2 | 16,691 dB | 9,076 dB |
+| StuPASE | 16,707 dB | 10,321 dB |
+| ROSE brut | 15,389 dB | 9,446 dB |
+| ROSE après Cap60 | 16,897 dB | 9,560 dB |
+| WPE | 16,001 dB | 10,289 dB |
+| DPDFNet2 | 15,662 dB | 10,161 dB |
+
+Ces statistiques n'étayent pas une compression globale de StuPASE sur cette phrase : la dynamique de ses trames est proche d'Adobe et son facteur de crête médian proche de Cap60. Son caractère « compressé » à l'écoute semble donc davantage lié au timbre, au lissage ou aux artefacts génératifs qu'à un simple écrasement de l'enveloppe RMS. Il reste possible qu'une compression locale/non linéaire ne soit pas capturée par ces deux résumés; ce clip ne permet pas d'en identifier la cause.
+
 La contradiction la plus instructive est conservée : DPDFNet2 est environ 32 dB plus bas que Cap60 sur l'unique offset mesurable entre 150 et 300 ms, mais il est perçu comme plus réverbérant. **La mesure ne classe donc pas la sensation entendue.** Une réduction d'énergie de pause ne prouve pas une suppression des réflexions précoces ou du filtrage en peigne pendant les phonèmes; un timbre artificiel peut même être perçu comme une pièce plus présente. Ces explications restent des hypothèses à départager, pas une attribution causale sur ce clip mono.
 
 Les bandes au-dessus de 8 kHz sont marquées comme non prises en charge pour StuPASE et ROSE-CD, exécutés à 16 kHz puis rééchantillonnés pour le pack. Le rééchantillonnage n'ajoute pas de contenu au-dessus de leur bande native; leurs niveaux HF ne sont donc pas rapportés comme des mesures comparables.
@@ -91,7 +107,7 @@ Les bandes au-dessus de 8 kHz sont marquées comme non prises en charge pour Stu
 4. Ne faire une inférence avec un nouveau moteur qu'après avoir vérifié poids, provenance et licence. VoiceFixer est déjà cloné localement, mais son rapport antérieur note que le checkpoint téléchargé n'a pas satisfait le checksum annoncé; il ne doit pas être rechargé. StoRM est cloné, mais aucun checkpoint n'est présent localement et ses poids distribués séparément n'ont pas été audités. Aucun des deux n'est actuellement un candidat exécutable/promouvable.
 5. Pour `test.wav`, sans stem sec Adobe ni réponse impulsionnelle, les métriques restent des indicateurs partiels. Le fichier n'a pas été téléversé ni partagé.
 
-GPT Web a recommandé d'abandonner le RMS terminal comme score principal et d'ajouter SRMR, coloration spectrale et mesures de préservation de la voix. Cette passe ajoute SRMR et un indice de ripple spectrale, tous deux validés en direction sur deux paires locales sèches/réverbérées; la ripple demeure un proxy confondu par le timbre et le modèle. La réverbération présente dans l'entrée brute rend plusieurs pauses non mesurables selon la règle conservatrice; il reste seulement 1/1/0 offsets complets selon la fenêtre. Le nombre d'offsets mesurables est trop faible pour une conclusion statistique.
+GPT Web a recommandé d'abandonner le RMS terminal comme score principal et d'ajouter SRMR, coloration spectrale et mesures de préservation de la voix. Cette passe ajoute SRMR, un indice de ripple spectrale contrôlé sur deux paires locales sèches/réverbérées et deux statistiques simples de dynamique. La ripple demeure confondue par le timbre et le modèle; les statistiques d'amplitude ne suffisent pas à expliquer un timbre jugé compressé. La réverbération présente dans l'entrée brute rend plusieurs pauses non mesurables selon la règle conservatrice; il reste seulement 1/1/0 offsets complets selon la fenêtre. Le nombre d'offsets mesurables est trop faible pour une conclusion statistique.
 
 Le script reproductible est [`analyze_model_family_room_perception.py`](../../scripts/benchmarks/universal_enhancer/analyze_model_family_room_perception.py). Les CSV/JSON/PNG et WAV liés à l'enregistrement restent en local sous `results/` et ne sont pas ajoutés au dépôt.
 
