@@ -70,6 +70,25 @@ def audit(data_dir: Path, output: Path) -> dict:
             issues.append("manifest screening policy hash does not match recalculated calibration policy")
     except Exception as exc:
         issues.append(f"could not validate frozen screening policy: {type(exc).__name__}: {exc}")
+    cache_index = {}
+    cache_dir = data_dir / "cap60-cache"
+    if cache_dir.is_dir():
+        for meta_path in cache_dir.glob("*.json"):
+            try:
+                cache_meta = json.loads(meta_path.read_text())
+            except (OSError, json.JSONDecodeError):
+                continue
+            audio_path = meta_path.with_suffix(".npy")
+            source_hash = cache_meta.get("source_sha256")
+            if source_hash and audio_path.is_file():
+                cache_index.setdefault(str(source_hash), audio_path)
+
+    def cached_output(source_hash: str) -> np.ndarray:
+        path = cache_index.get(source_hash)
+        if path is None:
+            raise FileNotFoundError(f"missing exact-hash Cap60 output for {source_hash}")
+        return np.load(path, mmap_mode="r", allow_pickle=False)
+
     tail_rows = [row for row in rows if row.get("kind") == "rir_only"]
     row_checks = []
     for tail_slot, row in enumerate(tail_rows):
@@ -95,6 +114,7 @@ def audit(data_dir: Path, output: Path) -> dict:
                     recipe.get("screening_policy_sha256") != meta.get("selection_policy_sha256")):
                 issues.append(f"row {row.get('index')} surrogate history has stale calibration hashes")
         candidate_specs_valid = True
+        prefix_replay_errors = []
         for candidate_index, candidate_row in enumerate(history):
             candidate_seed = seed_for(tail_slot, candidate_index)
             t60, drr = candidate_parameters(candidate_seed)
@@ -125,6 +145,35 @@ def audit(data_dir: Path, output: Path) -> dict:
                     ((reason == "accept_full") == expected_eligible))
             else:
                 expected_eligible = False
+                score_policy_valid = False
+            try:
+                wet_prefix = cached_output(str(candidate_row["prefix_input_source_sha256"]))
+                if mode == "scale_surrogate":
+                    target_hash = str(candidate_row["reference_source_sha256"])
+                    target_prefix = cached_output(target_hash) * np.float32(candidate_row["scale_ratio"])
+                elif mode == "exact_full_target":
+                    target_hash = str(candidate_row["reference_source_sha256"])
+                    target_prefix = cached_output(target_hash)
+                else:
+                    target_hash = str(candidate_row.get("prefix_target_source_sha256") or
+                                      candidate_row["target_source_sha256"])
+                    target_prefix = cached_output(target_hash)
+                crop_start = int(row["crop_start_sample"])
+                measure_end = crop_start + pause + 9_600
+                gain = float(row["post_cap_gain"])
+                replay = tail_input_levels(
+                    np.asarray(target_prefix[crop_start:measure_end], np.float32) * gain,
+                    np.asarray(wet_prefix[crop_start:measure_end], np.float32) * gain,
+                    pause, activity_clean_crop=c)
+                replay_levels = replay.get("window_db", {})
+                replay_error = max(abs(float(replay_levels[key]) - float(prefix_levels[key]))
+                    for key in ("150_300", "300_600") if replay_levels.get(key) is not None
+                    and prefix_levels.get(key) is not None)
+                score_policy_valid &= replay_error <= 1e-5
+                prefix_replay_errors.append(replay_error)
+            except (FileNotFoundError, KeyError, ValueError, TypeError):
+                replay_error = float("inf")
+                prefix_replay_errors.append(replay_error)
                 score_policy_valid = False
             if mode == "scale_surrogate":
                 error = candidate_row.get("eref_surrogate_error_db")
@@ -172,7 +221,8 @@ def audit(data_dir: Path, output: Path) -> dict:
             "eligible": eligible, "candidate_index": chosen_index,
             "candidates_tested": recipe.get("candidates_tested"),
             "candidate_history_valid": history_valid,
-            "max_abs_level_error_db": level_error})
+            "max_abs_level_error_db": level_error,
+            "max_prefix_candidate_replay_error_db": max(prefix_replay_errors, default=float("inf"))})
     if len(row_checks) != 48:
         issues.append("did not audit all 48 tailbank arrays")
     result = {"name": "E2-F2-tailbank-coverage-audit-v2",
