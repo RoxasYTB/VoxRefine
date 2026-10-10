@@ -26,8 +26,9 @@ TRAIN_ROOMS = ("Hotel_SkalskyDvur_ConferenceRoom2", "VUT_FIT_C236", "VUT_FIT_D10
                "VUT_FIT_E112", "VUT_FIT_L207", "VUT_FIT_Q301")
 
 
-def measured_rir_dev(root: Path, training_items: list[dict]) -> list[dict]:
-    """Choose one distance-median, training-config-disjoint RIR per train room."""
+def measured_rir_dev(root: Path, training_items: list[dict],
+                     candidate_rooms=TRAIN_ROOMS) -> list[dict]:
+    """Choose one median-distance RIR per room, disjoint from selected configs."""
     train_configs = {item["configuration"] for item in training_items}
     candidates: dict[str, dict[str, dict]] = {}
     for wav in sorted(root.rglob("*.wav")):
@@ -38,7 +39,7 @@ def measured_rir_dev(root: Path, training_items: list[dict]) -> list[dict]:
         if mic_idx is None or mic_idx < 1:
             continue
         room = rel.parts[mic_idx - 1]
-        if room not in TRAIN_ROOMS:
+        if room not in candidate_rooms:
             continue
         config_dir = wav.parent.parent
         config = str(config_dir.relative_to(root))
@@ -51,9 +52,13 @@ def measured_rir_dev(root: Path, training_items: list[dict]) -> list[dict]:
             continue
         candidates.setdefault(room, {}).setdefault(config, {
             "path": str(wav), "room": room, "configuration": config,
-            "distance_m": float(match.group(1))})
+            "distance_m": float(match.group(1)),
+            "source_url": "https://speech.fit.vut.cz/software/but-speech-fit-reverb-database",
+            "dataset_version": "BUT ReverbDB 2019-06",
+            "license": "CC BY 4.0 (dataset page); accompanying README includes Apache-2.0 notices",
+            "attribution": "BUT Speech@FIT Reverb Database, Brno University of Technology; Szoke et al. (2018)"})
     result = []
-    for room in TRAIN_ROOMS:
+    for room in candidate_rooms:
         choices = sorted(candidates.get(room, {}).values(),
                           key=lambda x: (x["distance_m"], x["configuration"]))
         if not choices:
@@ -77,6 +82,7 @@ def measured_pair(clean: np.ndarray, rir: np.ndarray) -> dict[str, np.ndarray]:
     wet = wet_full[:clean.size]
     scale = .80 / max(float(np.max(np.abs(clean))), float(np.max(np.abs(wet))), 1e-8)
     return {"clean": (clean * scale).astype(np.float32),
+            "early": (early * scale).astype(np.float32),
             "reverberant": (wet * scale).astype(np.float32),
             "late": (late * scale).astype(np.float32)}
 
@@ -84,9 +90,14 @@ def measured_pair(clean: np.ndarray, rir: np.ndarray) -> dict[str, np.ndarray]:
 class MixedRIRSpeech(IterableDataset):
     """Same speech crops and procedural generator, with 50% measured RIR draws."""
 
-    def __init__(self, rows, measured, seed: int):
+    def __init__(self, rows, measured, seed: int, dry_probability: float = 0.20,
+                 target_early: bool = False):
         super().__init__()
         self.rows, self.measured, self.seed = list(rows), list(measured), int(seed)
+        self.dry_probability = float(dry_probability)
+        self.target_early = bool(target_early)
+        if not 0.0 <= self.dry_probability < 1.0:
+            raise ValueError("dry_probability must be in [0, 1)")
         if not self.rows or not self.measured:
             raise ValueError("speech rows and measured RIRs must be nonempty")
 
@@ -107,7 +118,7 @@ class MixedRIRSpeech(IterableDataset):
                 audio = audio.mean(axis=1, dtype=np.float32)
             clean = crop_audio(audio, CROP_SAMPLES, rng)
             level = float(10.0 ** (rng.uniform(-18.0, 0.0) / 20.0))
-            dry_control = bool(rng.random() < .20)
+            dry_control = bool(rng.random() < self.dry_probability)
             kind = "dry"
             if dry_control:
                 pair = {"clean": clean, "reverberant": clean, "late": np.zeros_like(clean)}
@@ -126,13 +137,15 @@ class MixedRIRSpeech(IterableDataset):
                 item = by_room[room][int(rng.integers(0, len(by_room[room])))]
                 rir, _meta = prepare_rir(item)
                 pair = measured_pair(clean, rir)
+            target = pair.get("early", pair["clean"]) if self.target_early and not dry_control else pair["clean"]
             yield {"mixture": torch.from_numpy(pair["reverberant"] * level),
-                   "clean": torch.from_numpy(pair["clean"] * level),
+                   "clean": torch.from_numpy(target * level),
                    "late": torch.from_numpy(pair["late"] * level),
                    "dry_control": dry_control, "rir_kind": kind, "speaker_id": speaker}
 
 
-def validation_loss_mixed(model, rows, measured_dev, seed, device, weak_over_weight):
+def validation_loss_mixed(model, rows, measured_dev, seed, device, weak_over_weight,
+                          target_early: bool = False):
     """Equal weight: fixed procedural/dev pairs + config-held-out measured rooms + dry."""
     rng = np.random.default_rng(seed)
     model.eval()
@@ -149,7 +162,8 @@ def validation_loss_mixed(model, rows, measured_dev, seed, device, weak_over_wei
                 "t60_s": float(rng.uniform(.25, 1.20)),
                 "direct_to_reverb_db": float(rng.uniform(-6, 18)),
             })
-            target = torch.from_numpy(proc["clean"]).unsqueeze(0).to(device)
+            target_np = proc["early"] if target_early else proc["clean"]
+            target = torch.from_numpy(target_np).unsqueeze(0).to(device)
             mix = torch.from_numpy(proc["reverberant"]).unsqueeze(0).to(device)
             late = torch.from_numpy(proc["late"]).unsqueeze(0).to(device)
             parts = loss_components(model(mix), target, *protection_masks(target, late))
@@ -157,7 +171,8 @@ def validation_loss_mixed(model, rows, measured_dev, seed, device, weak_over_wei
             item = measured_dev[index % len(measured_dev)]
             rir, _ = prepare_rir(item)
             pair = measured_pair(clean_np, rir)
-            target = torch.from_numpy(pair["clean"]).unsqueeze(0).to(device)
+            target_np = pair.get("early", pair["clean"]) if target_early else pair["clean"]
+            target = torch.from_numpy(target_np).unsqueeze(0).to(device)
             mix = torch.from_numpy(pair["reverberant"]).unsqueeze(0).to(device)
             late = torch.from_numpy(pair["late"]).unsqueeze(0).to(device)
             parts = loss_components(model(mix), target, *protection_masks(target, late))
