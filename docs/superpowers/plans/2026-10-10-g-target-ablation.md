@@ -83,3 +83,9 @@
 - [ ] Run Python syntax compilation for the new scripts and deterministic manifest/coverage integrity checks; do not run the general test suite unless requested.
 - [ ] Review staged diff and `git diff --cached --check`; stage only the explicitly listed G files.
 - [ ] Commit and push the checkpoint to the existing fork branch after the experiment artifacts are complete and reviewed.
+
+## Closure status — 10 October 2026
+
+G-v1 was closed **NON-EXECUTABLE** before training: its input-only DEV freeze resolved 46/64 pairs, then one slot exhausted all 32 exact candidates because the Cap60 input tail in 300–600 ms remained below the preregistered −50 dB threshold. The protocol was not relaxed and the 46 resolved rows were not fitted.
+
+The separately reviewed G2 feasibility pilot used a fresh RIR seed namespace on the diagnostic DEV speakers. It found 55/64 two-window-eligible pairs and 9/64 failures under `Lx(W) > max(−60 dB, Ldry(W)+6 dB)` in both windows. Since its preregistered gate required 64/64, G2 two-window is also **NON-EXECUTABLE**; neither G-clean nor G-hybrid was trained. See [the G2 feasibility report](../../benchmarking/g2-feasibility-2026-10-10.md). GPT Web recommends a new G-early experiment with W1-only supervision, W2 non-regression, fresh speakers, and a separate feasibility gate.
