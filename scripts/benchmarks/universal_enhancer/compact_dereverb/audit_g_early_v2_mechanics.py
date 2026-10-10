@@ -102,7 +102,7 @@ def grad_vector(grads, parameters: list[torch.nn.Parameter], group: str) -> torc
         if grad is None:
             continue
         belongs_to_head = id(parameter) in _HEAD_PARAMETER_IDS
-        if (group == "mask_head") != belongs_to_head:
+        if group != "all" and (group == "mask_head") != belongs_to_head:
             continue
         values.append(grad.detach().reshape(-1))
     if not values:
@@ -161,6 +161,63 @@ def w1_reduction_db(model, wet: torch.Tensor, dry: torch.Tensor,
     return values
 
 
+def w1_mask_diagnostics(model, wet: torch.Tensor,
+                        device: torch.device) -> list[dict[str, float]]:
+    """Summarize gain and phase on STFT frames overlapping W1."""
+    model.eval()
+    rows = []
+    start_frame = max(0, W1_START // model.hop_length)
+    end_frame = min(48_000 // model.hop_length + 1,
+                    math.ceil(W1_END / model.hop_length) + 1)
+    with torch.inference_mode():
+        for index in range(FIXTURE_COUNT):
+            x = wet[index:index + 1].to(device)
+            window = model.window.to(dtype=x.dtype, device=x.device)
+            spec = torch.stft(x, n_fft=model.n_fft, hop_length=model.hop_length,
+                win_length=model.n_fft, window=window, center=True, return_complex=True)
+            logits = model._predict_mask(torch.stack((spec.real, spec.imag), dim=1))
+            gain = 1.0 - model.MAX_ATTENUATION * torch.sigmoid(logits[:, 0])
+            phase = torch.pi * torch.tanh(logits[:, 1])
+            w1_logit = logits[:, 0, :, start_frame:end_frame]
+            w1_gain = gain[..., start_frame:end_frame]
+            w1_phase = phase[..., start_frame:end_frame]
+            rows.append({
+                "median_gain_logit": float(w1_logit.median()),
+                "p10_gain_logit": float(torch.quantile(w1_logit.flatten(), .1)),
+                "p90_gain_logit": float(torch.quantile(w1_logit.flatten(), .9)),
+                "median_gain": float(w1_gain.median()),
+                "p10_gain": float(torch.quantile(w1_gain.flatten(), .1)),
+                "p90_gain": float(torch.quantile(w1_gain.flatten(), .9)),
+                "median_abs_phase_rad": float(w1_phase.abs().median()),
+                "p90_abs_phase_rad": float(torch.quantile(w1_phase.abs().flatten(), .9)),
+            })
+    model.train()
+    return rows
+
+
+def gain_autograd_checks(device: torch.device) -> dict:
+    points = (-3.0, 0.0, 3.0)
+    rows = []
+    for point in points:
+        value = torch.tensor(point, dtype=torch.float64, device=device, requires_grad=True)
+        gain = 1.0 - 0.5 * torch.sigmoid(value)
+        derivative, = torch.autograd.grad(gain, value)
+        sigmoid = float(torch.sigmoid(value.detach()))
+        analytic = -0.5 * sigmoid * (1.0 - sigmoid)
+        relative_error = abs(float(derivative) - analytic) / max(abs(analytic), 1e-15)
+        rows.append({"logit": point, "gain": float(gain.detach()),
+            "autograd_derivative": float(derivative),
+            "analytic_derivative": analytic,
+            "relative_error": relative_error})
+    probe = torch.linspace(-20, 20, 10_001, dtype=torch.float64, device=device)
+    bounded = 1.0 - 0.5 * torch.sigmoid(probe)
+    return {"points": rows, "max_relative_error": max(r["relative_error"] for r in rows),
+        "autograd_matches_analytic_lt_1e-4": all(r["relative_error"] < 1e-4 for r in rows),
+        "min_probe_gain": float(bounded.min()), "max_probe_gain": float(bounded.max()),
+        "all_probe_gains_strictly_in_0_5_1": bool((bounded > 0.5).all() and
+                                                   (bounded < 1.0).all())}
+
+
 def overfit(kind: str, initial_state: dict, wet: torch.Tensor,
             dry: torch.Tensor, tail_ref: torch.Tensor,
             device: torch.device) -> dict:
@@ -169,6 +226,7 @@ def overfit(kind: str, initial_state: dict, wet: torch.Tensor,
     model.load_state_dict(initial_state)
     optimizer = torch.optim.AdamW(model.parameters(), lr=2e-4, weight_decay=1e-4)
     before = w1_reduction_db(model, wet, dry, device)
+    mask_before = w1_mask_diagnostics(model, wet, device)
     started = time.perf_counter()
     for step in range(OVERFIT_STEPS):
         index = step % FIXTURE_COUNT
@@ -187,6 +245,7 @@ def overfit(kind: str, initial_state: dict, wet: torch.Tensor,
         torch.nn.utils.clip_grad_norm_(model.parameters(), 3.0)
         optimizer.step()
     after = w1_reduction_db(model, wet, dry, device)
+    mask_after = w1_mask_diagnostics(model, wet, device)
     active_start, active_end = 3_200, 22_400
     with torch.inference_mode():
         active_delta = []
@@ -197,9 +256,22 @@ def overfit(kind: str, initial_state: dict, wet: torch.Tensor,
             after_energy = prediction[active_start:active_end].square().mean()
             active_delta.append(float(10 * torch.log10((after_energy + 1e-20) /
                                                        (before_energy + 1e-20))))
-    return {"kind": kind, "steps": OVERFIT_STEPS, "before_w1_db": before,
+    improvement = [new - old for new, old in zip(after, before)]
+    mask_delta = [{
+        "median_gain_delta": end["median_gain"] - start["median_gain"],
+        "median_abs_phase_delta_rad": end["median_abs_phase_rad"] - start["median_abs_phase_rad"],
+        "p90_abs_phase_delta_rad": end["p90_abs_phase_rad"] - start["p90_abs_phase_rad"],
+    } for start, end in zip(mask_before, mask_after)]
+    return {"kind": kind, "steps": OVERFIT_STEPS,
+        "optimizer": "AdamW(lr=2e-4, weight_decay=1e-4)",
+        "batch_order": "fixture index = optimizer step modulo 4",
+        "before_w1_db": before,
         "after_w1_db": after,
-        "median_w1_improvement_db": float(np.median(np.asarray(after) - np.asarray(before))),
+        "w1_improvement_db": improvement,
+        "median_w1_improvement_db": float(np.median(improvement)),
+        "w1_mask_diagnostics_before": mask_before,
+        "w1_mask_diagnostics_after": mask_after,
+        "w1_mask_diagnostics_delta": mask_delta,
         "active_speech_output_minus_target_db": active_delta,
         "elapsed_seconds": time.perf_counter() - started}
 
@@ -218,24 +290,50 @@ def audit(args) -> dict:
     wet, dry, tail_ref = make_fixtures()
     initial_state = {name: tensor.detach().cpu().clone()
                      for name, tensor in model.state_dict().items()}
+    initial_mask = w1_mask_diagnostics(model, wet, device)
+    phase_init_max = float(model.mask_head.weight[1].abs().max())
+    phase_bias_init = float(model.mask_head.bias[1].abs())
+    gain_weight = model.mask_head.weight[0].detach()
+    initial_gain_weights = {"mean": float(gain_weight.mean()),
+        "std": float(gain_weight.std(unbiased=False)),
+        "l2_norm": float(torch.linalg.vector_norm(gain_weight))}
     gradients = []
     for index in range(FIXTURE_COUNT):
         gradients.append(gradient_snapshot(model, wet[index:index + 1].to(device),
             dry[index:index + 1].to(device), dry[index:index + 1].to(device),
             tail_ref[index].to(device)))
+    identity_checks = []
+    for index in range(FIXTURE_COUNT):
+        retained_input = wet[index].to(device)
+        delta = 10.0 * torch.log10((retained_input[W1_START:W1_END].square().mean() + 1e-20) /
+                                   (retained_input[W1_START:W1_END].square().mean() + 1e-20))
+        loss = early_loss(retained_input, retained_input, dry[index].to(device),
+                          tail_ref[index].to(device))
+        identity_checks.append({"delta_w1_db_y_equals_x": float(delta),
+                                "early_loss_y_equals_x": float(loss)})
     tail = overfit("tail_only", initial_state, wet, dry, tail_ref, device)
     full = overfit("full_loss", initial_state, wet, dry, tail_ref, device)
     derivative = initial_gain_diagnostics()
+    autograd = gain_autograd_checks(device)
     finite_gradient = all(math.isfinite(value) for row in gradients for key, value in row.items()
                           if key.startswith("grad_") or key == "clip_factor_at_3")
     nonzero_groups = all(row["grad_early_norm_mask_head"] > 0 and
                          row["grad_early_norm_trunk"] > 0 for row in gradients)
-    tail_gate = tail["median_w1_improvement_db"] >= 3.0
-    full_gate = full["median_w1_improvement_db"] >= 0.25
+    tail_gate = all(value >= 2.5 for value in tail["w1_improvement_db"])
+    full_gate = (full["median_w1_improvement_db"] >= 0.5 and
+                 all(value >= -0.25 for value in full["w1_improvement_db"]))
     zero_input = torch.zeros(1, 32_000, device=device)
     with torch.inference_mode():
         zero_max = float(model(zero_input).abs().max())
     zero_gate = zero_max < 1e-7
+    identity_gate = all(abs(row["delta_w1_db_y_equals_x"]) < 1e-12 and
+        abs(row["early_loss_y_equals_x"] - 1.0) < 1e-6 for row in identity_checks)
+    gain_bounds_gate = autograd["all_probe_gains_strictly_in_0_5_1"]
+    autograd_gate = autograd["autograd_matches_analytic_lt_1e-4"]
+    init_gain_gate = all(abs(row["median_gain_logit"] + 3.0) <= 0.05 and
+        abs(row["p10_gain_logit"] + 3.0) <= 0.10 and
+        abs(row["p90_gain_logit"] + 3.0) <= 0.10 for row in initial_mask)
+    init_phase_gate = phase_init_max == 0.0 and phase_bias_init == 0.0
     return {
         "protocol": "G-early-v2-synthetic-mechanism-v1",
         "seed": SEED,
@@ -248,16 +346,29 @@ def audit(args) -> dict:
             "sample_rate": SAMPLE_RATE, "w1_ms_after_pause": [150, 300],
             "corpus_files_read": False, "g_early_v1_artifacts_read": False},
         "gain_analytic_checks": derivative,
+        "gain_autograd_checks": autograd,
+        "initial_gain_weight_statistics": initial_gain_weights,
+        "initial_w1_gain_and_logit_by_fixture": initial_mask,
+        "initial_phase_head_max_abs_weight": phase_init_max,
+        "initial_phase_head_abs_bias": phase_bias_init,
+        "identity_checks": identity_checks,
         "gradient_initialization_by_fixture": gradients,
         "overfit": {"tail_only": tail, "full_loss": full},
         "zero_input_max_abs": zero_max,
         "gates": {"finite_component_gradients": finite_gradient,
             "early_gradient_reaches_head_and_trunk": nonzero_groups,
-            "tail_only_median_w1_improvement_ge_3db": tail_gate,
-            "full_loss_median_w1_improvement_ge_0_25db": full_gate,
+            "gain_autograd_relative_error_lt_1e-4": autograd[
+                "autograd_matches_analytic_lt_1e-4"],
+            "all_probe_gains_strictly_in_0_5_1": gain_bounds_gate,
+            "initial_w1_gain_logit_close_to_minus3": init_gain_gate,
+            "phase_head_exactly_zero_at_initialization": init_phase_gate,
+            "y_equals_x_delta_0_and_early_loss_1": identity_gate,
+            "tail_only_each_fixture_w1_improvement_ge_2_5db": tail_gate,
+            "full_loss_median_w1_improvement_ge_0_5db_and_no_regression_below_minus_0_25db": full_gate,
             "zero_output_invariant_lt_1e-7": zero_gate},
-        "overall": "PASS" if finite_gradient and nonzero_groups and tail_gate and
-            full_gate and zero_gate else "FAIL",
+        "overall": "PASS" if finite_gradient and nonzero_groups and autograd_gate and
+            gain_bounds_gate and init_gain_gate and init_phase_gate and identity_gate and
+            tail_gate and full_gate and zero_gate else "FAIL",
     }
 
 

@@ -20,13 +20,23 @@ class CompactAttenuationOnlyDereverbG2(CompactAttenuationOnlyDereverb16k):
 
     MAX_ATTENUATION = 0.5
     INITIAL_GAIN_LOGIT = -3.0
+    GAIN_WEIGHT_STD = 1e-4
+    GAIN_INIT_SEED = 2026101002
 
     def __init__(self, n_fft: int = 512, hop_length: int = 128,
                  base_channels: int = 16):
         super().__init__(n_fft=n_fft, hop_length=hop_length,
                          base_channels=base_channels)
         with torch.no_grad():
+            generator = torch.Generator(device="cpu").manual_seed(self.GAIN_INIT_SEED)
+            gain_weight = torch.empty_like(self.mask_head.weight[0], device="cpu")
+            torch.nn.init.normal_(gain_weight, mean=0.0, std=self.GAIN_WEIGHT_STD,
+                                  generator=generator)
+            self.mask_head.weight[0].copy_(gain_weight.to(
+                device=self.mask_head.weight.device, dtype=self.mask_head.weight.dtype))
+            self.mask_head.weight[1].zero_()
             self.mask_head.bias[0] = self.INITIAL_GAIN_LOGIT
+            self.mask_head.bias[1] = 0.0
 
     def forward(self, audio: torch.Tensor) -> torch.Tensor:
         if audio.ndim != 2:
