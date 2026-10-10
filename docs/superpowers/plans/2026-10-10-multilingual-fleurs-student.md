@@ -31,7 +31,7 @@
 - Refuser l’écrasement des données déjà préparées sans `--force`.
 
 - [ ] Énumérer les 102 configurations FLEURS et les tailles des archives train/dev depuis l’API Hub ; calculer l’espace temporaire requis avant tout téléchargement.
-- [ ] Télécharger les archives dans un cache temporaire avec reprise HTTP Range, vérifier taille et SHA-256 LFS, extraire les WAV 16 kHz en FLAC sans rééchantillonnage.
+- [ ] Télécharger les archives dans un cache temporaire avec reprise HTTP Range, vérifier taille et SHA-256 LFS, extraire les WAV 16 kHz source sans rééchantillonnage ni réencodage.
 - [ ] Lire les TSV officiels pour maintenir les identifiants et métadonnées, séparer train de dev et rejeter les enregistrements non mono, non 16 kHz ou illisibles.
 - [ ] Écrire le manifeste avec attribution FLEURS CC BY 4.0 et citation Conneau et al. (SLT 2022), puis supprimer l’archive temporaire vérifiée après extraction.
 - [ ] Exécuter un dry-run et un petit lot anglais/français avant l’extraction complète ; enregistrer tailles, durées, langues et locuteurs obtenus.
@@ -53,7 +53,9 @@
 - [ ] Générer à la volée du bruit CC0, du bruit coloré, des RIR mesurées/synthétiques, des échos discrets, du clipping modéré, des codecs et des bandes 8 kHz ; stocker les paramètres et seed pour chaque validation.
 - [ ] Échantillonner les langues de façon équilibrée plutôt qu’en proportion brute, et éviter qu’une voix/phrase répétée traverse les splits.
 - [ ] Combiner perte multi-résolution, waveform bornée, contrôle d’identité propre, préservation des faibles trames/onsets et pénalité de silence ; choisir checkpoint seulement sur dev multilingue.
-- [ ] Lancer un pilote GPU court, mesurer allocation maximale, temps par pas et contrôles propres/bruit/RIR, puis prolonger uniquement si les critères de préservation et de restauration s’améliorent.
+- [x] Lancer un smoke-test GPU 100 pas (≈0,11 Gio alloué) : pipeline exécutable, mais le score room bouge peu.
+- [x] Pilote initial stoppé à 1 000/2 000 pas : sur 11 langues, L1 du clean augmente de ~0 à 0,103 ; le checkpoint est rejeté.
+- [ ] Corriger les pertes pour garantir le chemin identité propre et vérifier le jeu de RIR avant tout nouveau pilote ; ne prolonger que si les critères clean et room s’améliorent ensemble.
 
 ### Task 3: Validation indépendante et décision de capacité
 
@@ -79,3 +81,7 @@
 - [ ] Écrire attribution, citation, CC BY 4.0, contenu inclus/exclu, transformations et répartition locale des langues.
 - [ ] Ne pas inclure les enregistrements FLEURS, les sorties Adobe, le NDA ou ses clauses dans le dépôt Git.
 - [ ] Ne publier un checkpoint que si la carte de modèle, provenance des données, licence du code/poids et validation sont toutes renseignées.
+
+## Résultat intermédiaire du 10 octobre 2026
+
+Le pipeline d’acquisition est lancé et reprend via `--resume`. Les premières 11 locales train/dev totalisent 27 005 clips / 91,92 h train et 3 941 clips / 12,70 h dev. Ces données restent dans des chemins ignorés par Git. Le pilote de 1 000 pas a dégradé la validation « clean » (wave L1 ≈0,103) et n’a que faiblement réduit l’erreur de réverbération synthétique ; aucun poids n’est retenu comme candidat de publication. Le problème doit être corrigé avant d’augmenter le nombre de pas.
