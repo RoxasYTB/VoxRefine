@@ -74,4 +74,10 @@ Le gel DEV/HOLDOUT a utilisé Cap60 sur CPU pendant environ 56 minutes cumulées
 
 GPT Web a revu le gel et les gates. Avant entraînement, son audit de protocole a conduit à rendre W2 explicite: la couverture est informative/total des paires RIR, tandis que Mlow et le taux de régressions certaines utilisent seulement les paires W2 informatives, controls inclus. Le seuil n’a pas changé. Le futur HOLDOUT restera verrouillé jusqu’à la création d’un reçu de décision DEV contenant les hashes du manifest, du résumé et du checkpoint sélectionné.
 
+Les deux fits appariés ont ensuite atteint exactement 3 000 updates chacun sur la GTX 1050 Ti: 206,0 s pour `G-early-clean`, 205,6 s pour `G-early-hybrid`; pic mémoire observé 381,9/383,2 MiB. L’ordre de batch, l’initialisation et les références partagées ont été comparés bit-à-bit. Les checkpoints restent ignorés sous `.tools/`.
+
+Le premier passage d’évaluation DEV a parcouru 64 paires, puis a échoué avant d’écrire résumé ou décision: le code exigeait W2 sur chaque paire, alors que certaines fenêtres 300–600 ms n’étaient pas disponibles. Aucun résultat n’a été consulté pour choisir ou modifier un modèle; HOLDOUT n’a pas été passé au modèle. Correction mécanique: W2 absent compte comme non informatif dans le dénominateur de couverture total RIR; Mlow/régressions n’incluent que les intervalles W2 informatifs; W1 manquant sur une paire éligible reste bloquant. Les deux checkpoints sont conservés, sans réentraînement.
+
+Amendement de code d’évaluation enregistré sous `.tools/compact-dereverb/g-early-2026-10-10/evaluation-code-amendment.json`: ancien SHA évaluation `84a0d7437801990a56fe82f9132f347c031b639d4aaa6f7354c3dd696eee52dd`; version corrigée `1956f17299177e4962340ce5e14f8974f6d5e09d72724c00fc8cf809be9fa28d`; SHA de l’amendement `32677d51cedb7028778ee89c81c77c5841070ca19808c7db4860e809cc6c734c`. Il lie ces versions aux hashes de train, poids et données. L’évaluation DEV est relancée avec la correction; aucun gate ne change.
+
 Ces PASS valident seulement la disponibilité statistique des exemples pour les fits. Ils ne démontrent encore aucune amélioration audio.

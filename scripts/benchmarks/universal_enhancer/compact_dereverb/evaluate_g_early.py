@@ -94,6 +94,29 @@ def speech_truth_stats(clean: np.ndarray, output: np.ndarray,
     return stats, fractions
 
 
+def validate_evaluator_binding(config: dict) -> str | None:
+    """Allow a recorded mechanical W2 fix without rewriting fit metadata."""
+    current_sha = sha(HERE / "evaluate_g_early.py")
+    trained_sha = config.get("evaluator_source_sha256")
+    if trained_sha == current_sha:
+        return None
+    amendment_path = EXPERIMENT / "evaluation-code-amendment.json"
+    if not amendment_path.is_file():
+        raise RuntimeError("evaluator source changed without a run-bound amendment")
+    amendment = json.loads(amendment_path.read_text())
+    if (amendment.get("original_evaluator_source_sha256") != trained_sha or
+            amendment.get("corrected_evaluator_source_sha256") != current_sha or
+            amendment.get("training_manifest_sha256") != sha(
+                EXPERIMENT / "data/training-data-manifest.json") or
+            amendment.get("training_pair_manifest_sha256") != sha(
+                EXPERIMENT / "data/pairs.jsonl") or
+            amendment.get("prior_dev_summary_written") is not False or
+            amendment.get("prior_dev_decision_written") is not False or
+            amendment.get("prior_dev_metrics_inspected") is not False):
+        raise RuntimeError("evaluator amendment does not match this run/current code")
+    return sha(amendment_path)
+
+
 def load_g_model(variant: str, device: torch.device) -> tuple[torch.nn.Module, Path, dict]:
     output = EXPERIMENT / variant
     checkpoint = output / "checkpoints/step-003000.pt"
@@ -102,11 +125,11 @@ def load_g_model(variant: str, device: torch.device) -> tuple[torch.nn.Module, P
             config.get("checkpoint_sha256") != sha(checkpoint) or config.get("steps") != 3000 or
             config.get("protocol_version") != "G-early-v1" or
             config.get("trainer_source_sha256") != sha(HERE / "train_g_early.py") or
-            config.get("evaluator_source_sha256") != sha(HERE / "evaluate_g_early.py") or
             config.get("split_freeze_source_sha256") != sha(HERE / "freeze_g_early_splits.py") or
             config.get("training_audit_source_sha256") != sha(HERE / "audit_g_early_training.py") or
             config.get("split_audit_source_sha256") != sha(HERE / "audit_g_early_splits.py")):
         raise RuntimeError(f"{variant} is missing a frozen step-3000 checkpoint/config")
+    validate_evaluator_binding(config)
     state = torch.load(checkpoint, map_location="cpu", weights_only=False)
     if state.get("step") != 3000 or state.get("variant") != variant:
         raise RuntimeError(f"invalid G checkpoint for {variant}")
@@ -254,9 +277,11 @@ def summarize_variant(rows: list[dict], variant: str) -> dict:
         _lower, upper, _status = interval_for_tail(item)
         if upper < -1.0:
             certain_regressions += 1
-    w2_safety = {"pair_count": len(w2_all),
+    # The denominator is every frozen RIR pair. A missing W2 interval is
+    # uninformative, not a failed evaluation or an eligible W2 measurement.
+    w2_safety = {"pair_count": len(rows),
         "informative_pair_count": len(informative),
-        "informative_fraction": len(informative) / len(w2_all) if w2_all else None,
+        "informative_fraction": len(informative) / len(rows) if rows else None,
         "informative_rule": "input_tail_db > common_floor_db + 3 dB; W2 informative rows include BASE_ONLY_CONTROL",
         "tail_summary_denominator": "informative W2 rows only",
         "certain_regression_below_minus1_count": certain_regressions,
@@ -386,6 +411,8 @@ def run_split(split: str, requested_winner: str | None, device_name: str,
                 decision.get("winner_checkpoint_sha256") != sha(
                     EXPERIMENT / requested_winner / "checkpoints/step-003000.pt") or
                 decision.get("evaluator_source_sha256") != sha(HERE / "evaluate_g_early.py") or
+                decision.get("evaluation_code_amendment_sha256") != sha(
+                    EXPERIMENT / "evaluation-code-amendment.json") or
                 decision.get("trainer_source_sha256") != sha(HERE / "train_g_early.py") or
                 decision.get("split_freeze_source_sha256") != sha(HERE / "freeze_g_early_splits.py") or
                 decision.get("training_manifest_sha256") != sha(
@@ -489,8 +516,8 @@ def run_split(split: str, requested_winner: str | None, device_name: str,
     for row in rows:
         for variant in variants:
             bands = {item["band_ms"] for item in row["models"][variant]["tails"]}
-            if bands != {"150_300", "300_600"}:
-                raise RuntimeError("G tail evaluation is missing a preregistered interval")
+            if row["tail_eligible"] and "150_300" not in bands:
+                raise RuntimeError("W1-eligible G pair is missing its primary 150–300 ms interval")
 
     summary = {"protocol": split_manifest["name"],
         "protocol_version": "G-early-v1",
@@ -499,6 +526,8 @@ def run_split(split: str, requested_winner: str | None, device_name: str,
         "split_freeze_source_sha256": sha(HERE / "freeze_g_early_splits.py"),
         "split_index_sha256": sha(index_path),
         "training_manifest_sha256": sha(data_manifest_path),
+        "evaluation_code_amendment_sha256": validate_evaluator_binding(
+            json.loads((EXPERIMENT / variants[0] / "model-config.json").read_text())),
         "split_manifest_sha256": sha(split_manifest_path),
         "training_pair_manifest_sha256": sha(data_path),
         "checkpoints": checkpoint_hashes, "pair_count": len(rows),
@@ -573,6 +602,9 @@ def run_split(split: str, requested_winner: str | None, device_name: str,
             "winner": winner, "winner_state": winner_state, "rule": rule,
             "gate_states": summary["gates_by_variant"][winner],
             "evaluator_source_sha256": sha(HERE / "evaluate_g_early.py"),
+            "evaluation_code_amendment_sha256": sha(
+                EXPERIMENT / "evaluation-code-amendment.json")
+                if (EXPERIMENT / "evaluation-code-amendment.json").is_file() else None,
             "trainer_source_sha256": sha(HERE / "train_g_early.py"),
             "split_freeze_source_sha256": sha(HERE / "freeze_g_early_splits.py"),
             "training_manifest_sha256": sha(EXPERIMENT / "data/training-data-manifest.json"),
