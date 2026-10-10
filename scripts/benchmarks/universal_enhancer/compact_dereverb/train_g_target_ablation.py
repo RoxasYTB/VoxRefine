@@ -180,6 +180,9 @@ def train_one(variant: str, args, init_state: dict, init_sha: str,
         "steps": args.steps, "batch_size": 1, "tail_loss_weight": 1.0,
         "target": "c_q dry clean" if variant == "G-clean" else "frozen weak/onset hybrid",
         "tail_ref": "a_q = Cap60(clean_scaled)*common_gain, independent of target",
+        "shared_input_hashes": [row["x_sha256"] for row in rows],
+        "shared_clean_truth_hashes": [row["clean_target_sha256"] for row in rows],
+        "shared_cap60_reference_hashes": [row["cap_target_sha256"] for row in rows],
         "tail_ref_hashes": [row["tail_ref_sha256"] for row in rows],
         "test_wav_accessed": False}
     (output / "model-config.json").write_text(json.dumps(config, indent=2) + "\n")
@@ -349,8 +352,11 @@ def train(args) -> list[str]:
               for variant in ("G-clean", "G-hybrid")]
     if configs[0]["initialization_sha256"] != configs[1]["initialization_sha256"] or not np.array_equal(*orders):
         raise RuntimeError("matched G fits differ in initialization or batch order")
-    if configs[0]["tail_ref_hashes"] != configs[1]["tail_ref_hashes"]:
-        raise RuntimeError("G-clean/G-hybrid tail reference hashes differ")
+    for field in ("training_data_manifest_sha256", "training_pair_manifest_sha256",
+            "shared_input_hashes", "shared_clean_truth_hashes",
+            "shared_cap60_reference_hashes", "tail_ref_hashes"):
+        if configs[0][field] != configs[1][field]:
+            raise RuntimeError(f"G-clean/G-hybrid shared field differs: {field}")
     return paths
 
 
