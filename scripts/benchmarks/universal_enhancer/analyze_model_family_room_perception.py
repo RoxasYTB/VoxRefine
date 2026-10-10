@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import soundfile as sf
 from scipy import ndimage
-from scipy.signal import butter, sosfiltfilt
+from scipy.signal import butter, resample_poly, sosfiltfilt
 
 ROOT = Path(__file__).resolve().parents[3]
 PACK = ROOT / "results/user-recording-test-2026-10-09/model-family-comparison-02"
@@ -103,6 +103,29 @@ def main() -> None:
             sos = butter(4, (lo, hi), btype="bandpass", fs=RATE, output="sos")
             filtered[name][f"{lo}-{hi}Hz"] = sosfiltfilt(sos, x)
 
+    # SRMRpy is an optional, locally cloned research metric. Its reference
+    # implementation is tested at 8/16 kHz, so downsample the 48 kHz pack to
+    # 16 kHz instead of asking it to process unsupported rates. Keep the
+    # metric separate from pause residuals: it is sensitive to noise and
+    # processing artifacts and is not a perceptual ground truth.
+    srmr_rows = []
+    try:
+        import sys
+        sys.path.insert(0, str(ROOT / ".tools/SRMRpy"))
+        from srmrpy import srmr
+    except ImportError:
+        srmr = None
+    if srmr is not None:
+        for name, x in matched.items():
+            x16 = resample_poly(x, 1, 3)
+            raw_score, _ = srmr(x16, 16_000, fast=True, norm=False)
+            norm_score, _ = srmr(x16, 16_000, fast=True, norm=True)
+            srmr_rows.append({"candidate": name,
+                              "srmr_original": float(raw_score),
+                              "srmr_normalized": float(norm_score),
+                              "sample_rate_hz": 16_000,
+                              "duration_s": len(x16) / 16_000})
+
     rows = []
     for event_id, (_, end) in enumerate(events, 1):
         next_start = events[event_id][0] if event_id < len(events) else n
@@ -158,6 +181,19 @@ def main() -> None:
         "windows_ms_after_event_end": WINDOWS_MS,
         "bands_hz": BANDS,
         "native_bandwidth_hz": NATIVE_BANDWIDTH_HZ,
+        "srmr": {
+            "implementation": "SRMRpy official reference implementation, optional local clone",
+            "repository": "https://github.com/jfsantos/SRMRpy",
+            "commit": "fee009779cef96bed34db3a7e31d10f3ad1ea133",
+            "sample_rate_hz": 16000,
+            "rows": srmr_rows,
+            "limitations": [
+                "Non-intrusive modulation-based proxy; not a direct RT60 or room-depth measurement.",
+                "Can change with noise reduction, compression, bandwidth, and artifacts as well as reverberation.",
+                "A single 6.23 s user clip cannot establish a universal ranking or Adobe parity.",
+                "Scores are reported only when optional local SRMRpy is available.",
+            ],
+        },
         "offsets": [{"event": i, "start_s": round(s / RATE, 4), "end_s": round(e / RATE, 4)} for i, (s, e) in enumerate(events, 1)],
         "limitations": [
             "Residual contains room response, noise, unvoiced speech, and model artifacts; there is no dry stem.",
@@ -202,7 +238,7 @@ def main() -> None:
     fig.suptitle("Énergie résiduelle multi-bandes — une voix, une pièce, alignement commun\nMesure descriptive, pas un score de déréverbération\n300–600 ms : aucun offset complet et non recouvert (n=0, censuré)")
     fig.savefig(OUT / "multi_offset_room_residual.png", dpi=170)
     plt.close(fig)
-    print(json.dumps({"events": metadata["offsets"], "valid_counts": {
+    print(json.dumps({"events": metadata["offsets"], "srmr": srmr_rows, "valid_counts": {
         f"{a}-{b}ms": sum(1 for r in rows if r["candidate"] == "Cap60" and r["window_ms"] == f"{a}-{b}" and r["band"] == "broadband" and r["valid"])
         for a, b in WINDOWS_MS
     }, "files": ["multi_offset_room_residual.json", "multi_offset_room_residual.csv", "multi_offset_room_residual.png"]}, indent=2))
