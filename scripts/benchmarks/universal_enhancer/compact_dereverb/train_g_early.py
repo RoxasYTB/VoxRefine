@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import random
 import sys
 import time
@@ -105,7 +106,9 @@ def tail_loss(pred: torch.Tensor, x: torch.Tensor, clean: torch.Tensor,
         delta1 = 10 * torch.log10((ex + eps) / (ey + eps))
         terms.append((torch.nn.functional.relu(3.0 - delta1) / 3.0).square())
     if not terms:
-        return pred.sum() * 0.0, 0
+        # Controls skip W1 entirely; return a finite scalar without reading
+        # the prediction graph (0 * NaN would still be NaN).
+        return pred.new_zeros(()), 0
     return torch.stack(terms).mean(), len(terms)
 
 
@@ -124,10 +127,25 @@ def validate_tail_loss_reference() -> None:
     grad, = torch.autograd.grad(value, pred)
     if not torch.isfinite(grad).all() or float(grad[0, 14_400:21_600].mean()) <= 0:
         raise RuntimeError("G tail gradient does not penalize residual tail energy")
+    half_energy = pred.detach().clone()
+    half_energy[:, 14_400:16_800] = .02 / math.sqrt(2.0)
+    half_value, half_count = tail_loss(half_energy, x, clean, tail_ref,
+        torch.tensor([12_000]), ("rir_only",), torch.tensor([True]))
+    if half_count != 1 or abs(float(half_value) - 0.0) > 1e-6:
+        raise RuntimeError("G-early W1 loss sign/energy convention failed at 3.01dB reduction")
+
+
+def freeze_batch_schedule(seed: int, steps: int, rows: int = 128) -> np.ndarray:
+    generator = torch.Generator(device="cpu").manual_seed(seed)
+    order: list[int] = []
+    while len(order) < steps:
+        order.extend(torch.randperm(rows, generator=generator).tolist())
+    return np.asarray(order[:steps], dtype=np.int64)
 
 
 def train_one(variant: str, args, init_state: dict, init_sha: str,
-              data_manifest: dict, rows: list[dict]) -> Path:
+              data_manifest: dict, rows: list[dict], schedule: np.ndarray,
+              schedule_sha: str) -> Path:
     target_name = "c" if variant == "G-early-clean" else "hybrid"
     output = args.experiment_dir / variant
     if output.exists() and any(output.iterdir()):
@@ -148,9 +166,9 @@ def train_one(variant: str, args, init_state: dict, init_sha: str,
         raise RuntimeError(f"E architecture changed: {count} parameters")
     assert_zero_invariant(model, device)
     dataset = GDataset(args.data_dir / "pairs.jsonl", target_name)
-    generator = torch.Generator().manual_seed(args.seed)
-    loader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=args.num_workers,
-        pin_memory=device.type == "cuda", drop_last=True, generator=generator)
+    worker_generator = torch.Generator().manual_seed(args.seed + 1)
+    loader = DataLoader(dataset, batch_size=1, sampler=schedule.tolist(), num_workers=args.num_workers,
+        pin_memory=device.type == "cuda", drop_last=True, generator=worker_generator)
     aux_manifest = json.loads((AUX_DIR / "manifest.json").read_text())
     if aux_manifest.get("test_wav_accessed") is not False or aux_manifest.get("counts") != {
             "fan20": 24, "fan10": 24}:
@@ -161,6 +179,12 @@ def train_one(variant: str, args, init_state: dict, init_sha: str,
         allow_pickle=False).copy()) for row in group] for kind, group in aux_rows.items()}
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=1e-4)
     config = {"variant": variant, "sample_rate": SR, "parameter_count": count,
+        "protocol_version": "G-early-v1",
+        "trainer_source_sha256": sha(HERE / "train_g_early.py"),
+        "evaluator_source_sha256": sha(HERE / "evaluate_g_early.py"),
+        "split_freeze_source_sha256": sha(HERE / "freeze_g_early_splits.py"),
+        "training_audit_source_sha256": sha(HERE / "audit_g_early_training.py"),
+        "split_audit_source_sha256": sha(HERE / "audit_g_early_splits.py"),
         "model_source_sha256": hashlib.sha256((HERE / "model_e.py").read_bytes()).hexdigest(),
         "initialization_sha256": init_sha,
         "training_data_manifest_sha256": sha(args.data_dir / "training-data-manifest.json"),
@@ -169,6 +193,7 @@ def train_one(variant: str, args, init_state: dict, init_sha: str,
         "split_manifest_sha256": sha(args.experiment_dir / "splits/manifest.json"),
         "seed": args.seed, "optimizer": "AdamW(lr=2e-4, weight_decay=1e-4)",
         "steps": args.steps, "batch_size": 1, "tail_loss_weight": 1.0,
+        "batch_schedule_sha256": schedule_sha,
         "target": "c_q dry clean" if variant == "G-early-clean" else "frozen weak/onset hybrid",
         "tail_ref": "a_q = Cap60(clean_scaled)*common_gain, independent of target",
         "shared_input_hashes": [row["x_sha256"] for row in rows],
@@ -179,7 +204,7 @@ def train_one(variant: str, args, init_state: dict, init_sha: str,
     (output / "model-config.json").write_text(json.dumps(config, indent=2) + "\n")
     training_manifest = {**config, "device": str(device), "torch": torch.__version__,
         "train_kind_counts": dataset.kind_counts,
-        "batch_order_policy": "same DataLoader RandomSampler, isolated torch.Generator, identical seed for both fits",
+        "batch_order_policy": "same 3000-index schedule frozen and hashed before either fit; independent worker generator",
         "quiet_loss_weight": .5, "noise_aux_weight": .5,
         "noise_aux_every_n_steps": 4,
         "tail_eligibility": "input-only W1 first candidate with Lx>max(-60dB,Ldry+6dB); controls have lambda_early=0; W2 excluded from training loss",
@@ -232,7 +257,10 @@ def train_one(variant: str, args, init_state: dict, init_sha: str,
             log_row = {"step": step, "loss": float(total.detach()),
                 "speech_loss_without_c_floor": float((speech - .5 * components["floor"]).detach()),
                 "quiet_loss": float(quiet_loss(pred.detach(), target, clean).detach()),
-                "noise_aux_loss": auxiliary_value, "tail_loss": float(tail_value.detach()),
+                "noise_aux_loss": auxiliary_value,
+                "base_loss": float((total - tail_value).detach()),
+                "early_tail_loss": float(tail_value.detach()),
+                "tail_loss": float(tail_value.detach()),
                 "eligible_tail_examples_in_batch": eligible_count,
                 "grad_norm": float(grad_norm), "kind": list(kinds),
                 "row_index": int(indices[0]), "elapsed_s": time.perf_counter() - started,
@@ -245,6 +273,8 @@ def train_one(variant: str, args, init_state: dict, init_sha: str,
             assert_zero_invariant(model, device)
 
     order_array = np.asarray(order, dtype=np.int64)
+    if not np.array_equal(order_array, schedule):
+        raise RuntimeError("executed batch order differs from frozen prefit schedule")
     order_hash = hashlib.sha256(order_array.tobytes()).hexdigest()
     np.save(output / "batch-order.npy", order_array, allow_pickle=False)
     checkpoint = output / "checkpoints/step-003000.pt"
@@ -285,6 +315,11 @@ def train(args) -> list[str]:
             int(coverage.get("eligible_tail_slots", 0)) < 36):
         raise RuntimeError("G-early train needs 48 resolved slots and >=36 W1 eligible")
     if (not splits.get("frozen_before_training") or splits.get("opened_for_metrics") or
+            splits.get("holdout_opened") is not False or
+            splits.get("dev_coverage_gate_pass") is not True or
+            splits.get("holdout_coverage_gate_pass") is not True or
+            splits.get("dev_holdout_disjoint") is not True or
+            splits.get("disjoint_from_training") is not True or
             splits.get("dev_speaker_count") != 16 or splits.get("holdout_speaker_count") != 12):
         raise RuntimeError("fresh frozen 16/12 G speaker splits are required")
     rows = [json.loads(line) for line in pair_path.read_text().splitlines() if line.strip()]
@@ -409,6 +444,24 @@ def train(args) -> list[str]:
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(args.seed)
     torch.set_num_threads(args.cpu_threads)
+    schedule = freeze_batch_schedule(args.seed, args.steps, len(rows))
+    schedule_path = args.experiment_dir / "batch-schedule.npy"
+    schedule_meta_path = args.experiment_dir / "batch-schedule.json"
+    schedule_sha = hashlib.sha256(schedule.tobytes()).hexdigest()
+    if schedule_path.exists() or schedule_meta_path.exists():
+        if not (schedule_path.is_file() and schedule_meta_path.is_file()):
+            raise RuntimeError("partial frozen batch schedule artifact")
+        prior = np.load(schedule_path, allow_pickle=False)
+        meta = json.loads(schedule_meta_path.read_text())
+        if (not np.array_equal(prior, schedule) or meta.get("schedule_sha256") != schedule_sha or
+                meta.get("steps") != args.steps or meta.get("seed") != args.seed):
+            raise RuntimeError("existing prefit batch schedule differs from current fixed config")
+    else:
+        np.save(schedule_path, schedule, allow_pickle=False)
+        schedule_meta_path.write_text(json.dumps({"name": "G-early-batch-schedule-v1",
+            "schedule_sha256": schedule_sha, "steps": args.steps, "seed": args.seed,
+            "row_count": len(rows), "frozen_before_training": True,
+            "test_wav_accessed": False}, indent=2) + "\n")
     initial_model = CompactAttenuationOnlyDereverb16k(base_channels=16)
     initial_sha = state_dict_sha(initial_model)
     init_path = args.experiment_dir / "initial-state.pt"
@@ -426,7 +479,7 @@ def train(args) -> list[str]:
     paths = []
     for variant in ("G-early-clean", "G-early-hybrid"):
         paths.append(str(train_one(variant, args, init_state, initial_sha,
-                                   data_manifest, rows)))
+                                   data_manifest, rows, schedule, schedule_sha)))
     configs = [json.loads((args.experiment_dir / variant / "model-config.json").read_text())
                for variant in ("G-early-clean", "G-early-hybrid")]
     orders = [np.load(args.experiment_dir / variant / "batch-order.npy", allow_pickle=False)
@@ -435,7 +488,8 @@ def train(args) -> list[str]:
         raise RuntimeError("matched G-early fits differ in initialization or batch order")
     for field in ("training_data_manifest_sha256", "training_pair_manifest_sha256",
             "shared_input_hashes", "shared_clean_truth_hashes",
-            "shared_cap60_reference_hashes", "tail_ref_hashes"):
+            "shared_cap60_reference_hashes", "tail_ref_hashes",
+            "batch_schedule_sha256"):
         if configs[0][field] != configs[1][field]:
             raise RuntimeError(f"G-early-clean/G-early-hybrid shared field differs: {field}")
     return paths

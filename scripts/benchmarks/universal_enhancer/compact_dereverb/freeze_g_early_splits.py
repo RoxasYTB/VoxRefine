@@ -219,8 +219,8 @@ def freeze_split(split: str, n_speakers: int, excluded: set[str], args) -> tuple
                 "candidate_index": slot["candidate_index"],
                 "candidates_tested": slot["candidates_tested"]}
             speaker_rows.append({"pair_index": pair["pair_index"],
-                "first": pair["first"], "first_sha256": pair["first_sha256"],
-                "second": pair["second"], "second_sha256": pair["second_sha256"],
+                "first": Path(pair["first"]).name, "first_sha256": pair["first_sha256"],
+                "second": Path(pair["second"]).name, "second_sha256": pair["second_sha256"],
                 "pause_start_sample": slot["pause_start_sample"],
                 "crop_start_sample": slot["crop_start_sample"],
                 "pause_start_in_crop": slot["pause_start_in_crop"],
@@ -228,6 +228,11 @@ def freeze_split(split: str, n_speakers: int, excluded: set[str], args) -> tuple
                 "tail_loss_enabled": slot["tail_loss_enabled"],
                 "candidate_index": slot["candidate_index"],
                 "candidates_tested": slot["candidates_tested"],
+                "fan20_seed": hash_seed(
+                    f"G-early-{split}|{speaker['speaker_id']}|{pair['pair_index']}|fan20"),
+                "fan10_seed": hash_seed(
+                    f"G-early-{split}|{speaker['speaker_id']}|{pair['pair_index']}|fan10"),
+                "common_post_cap_gain": 1.0,
                 "procedural_rir": recipe,
                 "input_tail_selection_history": slot["history"]})
             rows.append(slot)
@@ -284,15 +289,26 @@ def freeze(args) -> dict:
     if len(rows) != 128 or len(train_ids) != 128:
         raise RuntimeError("G-early requires exactly 128 unique fixed training speakers")
     all_used = used_speakers(ROOT / ".tools/compact-dereverb")
-    # Resume-safe: known G-early selections are re-added explicitly in order below.
-    for split in ("dev", "sealed"):
-        p = args.experiment_dir / "splits" / split / "manifest.json"
-        if p.is_file():
-            ids = {str(s["speaker_id"]) for s in json.loads(p.read_text()).get("speakers", [])}
-            all_used.difference_update(ids)
-    excluded = all_used | train_ids
-    dev, dev_ids = freeze_split("dev", 16, excluded, args)
-    holdout, holdout_ids = freeze_split("sealed", 12, excluded | dev_ids, args)
+    split_root = args.experiment_dir / "splits"
+    def own_ids(split: str) -> set[str]:
+        ids: set[str] = set()
+        for filename in ("manifest.json", "manifest.design.json"):
+            path = split_root / split / filename
+            if path.is_file():
+                ids.update(str(s["speaker_id"]) for s in
+                    json.loads(path.read_text()).get("speakers", []))
+        return ids
+    # Existing partial designs contain their selected IDs. Remove only DEV's
+    # own IDs to make a resume hash-identical; keep any sealed IDs excluded
+    # from DEV, then remove them only when checking/resuming their own split.
+    own_dev, own_sealed = own_ids("dev"), own_ids("sealed")
+    prior_without_dev = all_used - own_dev
+    excluded_dev = prior_without_dev | train_ids
+    dev, dev_ids = freeze_split("dev", 16, excluded_dev, args)
+    if not dev.get("coverage_gate_pass"):
+        raise RuntimeError("DEV16 coverage gate failed; do not freeze/evaluate models")
+    excluded_sealed = (prior_without_dev - own_sealed) | train_ids | dev_ids
+    holdout, holdout_ids = freeze_split("sealed", 12, excluded_sealed, args)
     if (dev_ids & holdout_ids or (dev_ids | holdout_ids) & train_ids or
             not dev.get("coverage_gate_pass") or not holdout.get("coverage_gate_pass")):
         raise RuntimeError("G-early DEV/HOLDOUT speaker disjointness or coverage gate failed; no training")

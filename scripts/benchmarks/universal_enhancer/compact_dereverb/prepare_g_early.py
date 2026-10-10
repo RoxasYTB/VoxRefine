@@ -371,6 +371,7 @@ def prepare(args) -> dict:
         "train_eligible_speakers": len(eligible_speakers),
         "train_coverage_gate": {"minimum_eligible_slots": 36,
             "passed": train_coverage_pass},
+        "training_started": False, "model_outputs_accessed": False,
         "test_wav_accessed": False}
     manifest_path = data_dir / "training-data-manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, allow_nan=False) + "\n")
