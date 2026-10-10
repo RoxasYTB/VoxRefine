@@ -30,9 +30,13 @@ class Block(nn.Module):
 class FullbandStudent(nn.Module):
     """Offline 48 kHz speech restoration, residual in complex STFT space."""
 
-    def __init__(self, n_fft: int = 1024, hop_length: int = 256, base_channels: int = 8):
+    def __init__(self, n_fft: int = 1024, hop_length: int = 256, base_channels: int = 8,
+                 residual_scale: float = 1.0):
         super().__init__()
+        if not 0.0 < residual_scale <= 1.0:
+            raise ValueError("residual_scale must be in (0, 1]")
         self.n_fft, self.hop_length = int(n_fft), int(hop_length)
+        self.residual_scale = float(residual_scale)
         self.register_buffer("window", torch.hann_window(n_fft), persistent=False)
         c1, c2, c3, cb = base_channels, base_channels * 2, base_channels * 3, base_channels * 4
         self.e1, self.d1 = Block(2, c1), nn.Conv2d(c1, c2, 3, stride=2, padding=1)
@@ -65,7 +69,7 @@ class FullbandStudent(nn.Module):
         x = self.o2(self._up(x, b, self.u2))
         x = self.o1(self._up(x, a, self.u1))
         delta = self.head(x)
-        restored = spec + torch.complex(delta[:, 0], delta[:, 1])
+        restored = spec + self.residual_scale * torch.complex(delta[:, 0], delta[:, 1])
         return torch.istft(restored, self.n_fft, self.hop_length, self.n_fft,
                            self.window.to(waveform), center=True, length=n)
 

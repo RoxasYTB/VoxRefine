@@ -87,3 +87,13 @@
 Le corpus complet est prêt localement : 102 locales, 265 285 clips train (963,28 h) et 34 452 clips dev (119,07 h), 16 kHz mono. La licence déclarée est CC BY 4.0 ; le test officiel n’a pas été téléchargé. Ces données restent dans des chemins ignorés par Git.
 
 Le smoke-test CUDA atteint 0,11 Gio de VRAM allouée. Un pilote de 1 000 pas sur 11 langues a dégradé le clean (wave L1 ≈0,103) et peu amélioré la réverbération synthétique. Après stabilisation de la validation, un pilote sur 102 langues a été arrêté à 750/2 000 pas : le wave L1 clean est monté de ~0 à 0,021 (250), 0,050 (500), puis 0,083 (750), pendant que les métriques bruit/room ne s’amélioraient que modestement. Aucun de ces checkpoints n’est retenu comme candidat de publication. Le prochain essai doit imposer un résidu borné/une identité plus forte et employer de vraies RIR mesurées avant d’augmenter le nombre de pas.
+
+### Mise à jour de recherche : RIR mesurées et garde identité
+
+- Sources ajoutées localement, données non suivies par Git : OpenSLR26 simulé (60 000 RIR, 16 kHz, Apache-2.0) et les RIR réelles mono OpenSLR28 (38 mono 16 kHz disponibles dans le paquet inspecté, Apache-2.0). OpenSLR28 inclut aussi des RIR multicanales que ce pipeline n’a pas encore décodées.
+- Le lecteur de RIR expose maintenant un recentrage optionnel ; les augmentations OpenSLR26 ont une convolution avec contexte et une normalisation globale conservant le ratio direct/réverbéré.
+- Student avec gain résiduel 0,15 et porte hard de sélection : L1 clean ≤0,005 et erreur spectrale clean ≤0,01.
+- Smoke de 300 pas sur FLEURS : clean préservé à 0,00345 L1, mais le score composite augmente de 0,735 à 0,742 et l’amélioration room est négligeable. Aucun checkpoint de qualité n’est revendiqué.
+- Le script `evaluate_student_measured_rirs.py` reste exploratoire. Les premières paires VCTK + RIR OpenSLR28 ont montré un SI-SDR fortement dominé par l’alignement/DRR, et VCTK mic1 n’est pas une référence anéchoïque. Ne pas interpréter ces mesures comme une vraie évaluation de déréverbération.
+- ACE fournit les paires anéchoïque + AIR mesurée + bruit et les valeurs T60/DRR, mais demande inscription et est sous CC BY-ND 4.0. Le corpus n’a pas été téléchargé ; aucune paire teacher Adobe n’est requise ni utilisée.
+- Conclusion : prochaine étape = obtenir un jeu de test anéchoïque/RIR avec autorisation compatible ou accéder à ACE dans les conditions acceptées, bâtir un protocole correctement aligné, puis seulement reprendre l’entraînement. Les courbes/score FLEURS synthétiques sont une vérification de pipeline, pas une preuve de qualité studio.

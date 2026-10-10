@@ -15,7 +15,8 @@ import torch.nn.functional as F
 
 from multilingual_student import (
     DATA, RATE, MultilingualStudent, corrupt, group_by_locale, load_manifest,
-    make_noise_bank, normalize_pair, parameter_count, read_crop, records_for_split,
+    load_rir_index, make_noise_bank, normalize_pair, parameter_count, read_crop,
+    records_for_split,
 )
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -49,12 +50,13 @@ def balanced_sample(groups: dict[str, list[dict]], rng: random.Random) -> dict:
 
 def crop_example(row: dict, seconds: float, rng: random.Random,
                  noise_bank: list[torch.Tensor], device: torch.device,
-                 mode: str) -> tuple[torch.Tensor, torch.Tensor]:
-    clean = read_crop(row, seconds, rng)
+                 mode: str, rir_paths: list[Path]) -> tuple[torch.Tensor, torch.Tensor]:
+    clean, context = read_crop(row, seconds, rng, context_seconds=0.6)
     if mode == "clean":
         noisy = clean.to(device)
     else:
-        noisy = corrupt(clean, noise_bank, rng, device, mode=mode)
+        noisy = corrupt(clean, noise_bank, rng, device, mode=mode,
+                        clean_context=context, rir_paths=rir_paths)
     noisy, target = normalize_pair(clean.to(device), noisy)
     return noisy[None], target[None]
 
@@ -62,7 +64,7 @@ def crop_example(row: dict, seconds: float, rng: random.Random,
 @torch.no_grad()
 def validate(model: MultilingualStudent, rows_by_locale: dict[str, list[dict]],
              noise_bank: list[torch.Tensor], device: torch.device, seconds: float,
-             seed: int, clips_per_locale: int) -> dict:
+             seed: int, clips_per_locale: int, rir_paths: list[Path]) -> dict:
     rng = random.Random(seed)
     torch.manual_seed(seed)
     if device.type == "cuda":
@@ -75,13 +77,16 @@ def validate(model: MultilingualStudent, rows_by_locale: dict[str, list[dict]],
         selected = rows if len(rows) <= clips_per_locale else locale_rng.sample(rows, clips_per_locale)
         for row in selected:
             try:
-                clean = read_crop(row, seconds, locale_rng).to(device)
+                clean, context = read_crop(row, seconds, locale_rng, context_seconds=0.6)
+                clean = clean.to(device)
             except (OSError, RuntimeError, ValueError):
                 continue
             clean = clean / clean.square().mean().sqrt().clamp_min(1e-4)
             for mode_index, mode in enumerate(measures):
                 mode_rng = random.Random(seed + locale_index * 1_000_003 + mode_index * 97_409)
-                inp = clean if mode == "clean" else corrupt(clean, noise_bank, mode_rng, device, mode=mode)
+                inp = clean if mode == "clean" else corrupt(
+                    clean, noise_bank, mode_rng, device, mode=mode,
+                    rir_paths=rir_paths, clean_context=context)
                 with torch.autocast(device_type=device.type, dtype=torch.float16,
                                     enabled=device.type == "cuda"):
                     pred = model(inp[None])[0]
@@ -110,6 +115,13 @@ def validate(model: MultilingualStudent, rows_by_locale: dict[str, list[dict]],
         0.5 * summaries["clean"]["wave_l1"] +
         0.03 * max(0.0, summaries["mixed"]["peak"] - 1.0)
     )
+    # Hard clean-preservation gate. A lower composite score cannot justify a
+    # model that audibly modifies already-clean speech.
+    summaries["clean_preservation_ok"] = (
+        summaries["clean"]["wave_l1"] <= 0.005 and
+        summaries["clean"]["mrstft_log_l1"] <= 0.01
+    )
+    summaries["checkpoint_eligible"] = bool(summaries["clean_preservation_ok"])
     return summaries
 
 
@@ -126,6 +138,8 @@ def main() -> None:
     parser.add_argument("--validation-clips-per-locale", type=int, default=4)
     parser.add_argument("--seconds", type=float, default=1.5)
     parser.add_argument("--width", type=int, default=8)
+    parser.add_argument("--residual-scale", type=float, default=0.15,
+                        help="Bounded network residual gain; smaller values protect clean identity")
     parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--seed", type=int, default=20261010)
     parser.add_argument("--max-vram-gib", type=float, default=2.0)
@@ -134,7 +148,8 @@ def main() -> None:
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
-    if args.steps < 1 or args.validate_every < 1 or args.seconds < 0.75 or args.width < 4:
+    if (args.steps < 1 or args.validate_every < 1 or args.seconds < 0.75 or
+            args.width < 4 or not 0.0 < args.residual_scale <= 1.0):
         parser.error("steps/validate-every must be positive; seconds >= 0.75 and width >= 4")
     args.output = args.output.resolve()
     random.seed(args.seed)
@@ -170,6 +185,9 @@ def main() -> None:
     noise_bank = make_noise_bank()
     if not noise_bank:
         raise SystemExit("No CC0 noise sources decoded; refusing to train without real noise examples")
+    rir_paths = load_rir_index()
+    print(json.dumps({"event": "rir_bank", "source": "OpenSLR26 / Apache-2.0",
+                      "files": len(rir_paths)}, indent=2), flush=True)
     model = MultilingualStudent(args.width).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=1e-4)
     scaler = torch.amp.GradScaler("cuda", enabled=device.type == "cuda")
@@ -187,14 +205,15 @@ def main() -> None:
     if device.type == "cuda":
         torch.cuda.reset_peak_memory_stats(device)
     initial = validate(model, dev_groups, noise_bank, device, args.seconds,
-                       args.seed + 1000, args.validation_clips_per_locale)
+                       args.seed + 1000, args.validation_clips_per_locale, rir_paths)
     print(json.dumps({"event": "baseline", "validation": initial,
                       "parameters": parameter_count(model),
                       "cuda_free_bytes": torch.cuda.mem_get_info(device)[0] if device.type == "cuda" else None}, indent=2), flush=True)
     best_score = float("inf")
     if best_path.exists():
         saved = torch.load(best_path, map_location="cpu", weights_only=False)
-        best_score = float(saved.get("selection_score", best_score))
+        if saved.get("validation", {}).get("checkpoint_eligible", False):
+            best_score = float(saved.get("selection_score", best_score))
     rng = random.Random(args.seed)
     if start:
         rng.setstate(torch.load(latest, map_location="cpu", weights_only=False).get("python_rng_state", rng.getstate()))
@@ -203,14 +222,15 @@ def main() -> None:
         model.train()
         row = balanced_sample(train_groups, rng)
         try:
-            clean = read_crop(row, args.seconds, rng)
+            clean, context = read_crop(row, args.seconds, rng, context_seconds=0.6)
         except (OSError, RuntimeError, ValueError):
             continue
         identity = (step % 5 == 0)
         if identity:
             noisy, target = normalize_pair(clean.to(device), clean.to(device))
         else:
-            noisy = corrupt(clean, noise_bank, rng, device, mode="mixed")
+            noisy = corrupt(clean, noise_bank, rng, device, mode="mixed",
+                            rir_paths=rir_paths, clean_context=context)
             noisy, target = normalize_pair(clean.to(device), noisy)
         optimizer.zero_grad(set_to_none=True)
         with torch.autocast(device_type=device.type, dtype=torch.float16,
@@ -219,7 +239,8 @@ def main() -> None:
             wave_loss = F.l1_loss(pred, target[None])
             spectral_loss = mrstft_loss(pred, target[None])
             peak_loss = F.relu(pred.abs() - 0.98).square().mean()
-            loss = wave_loss + 0.5 * spectral_loss + 2.0 * peak_loss
+            identity_loss = (F.l1_loss(pred, noisy[None]) if identity else pred.new_zeros(()))
+            loss = wave_loss + 0.5 * spectral_loss + 2.0 * peak_loss + 2.0 * identity_loss
         if not torch.isfinite(loss):
             raise FloatingPointError(f"Non-finite loss at step {step}")
         scaler.scale(loss).backward()
@@ -229,7 +250,7 @@ def main() -> None:
         scaler.update()
         if step % args.validate_every == 0 or step == args.steps:
             validation = validate(model, dev_groups, noise_bank, device, args.seconds,
-                                  args.seed + 1000, args.validation_clips_per_locale)
+                                  args.seed + 1000, args.validation_clips_per_locale, rir_paths)
             peak_vram = (torch.cuda.max_memory_allocated(device) if device.type == "cuda" else 0)
             peak_gib = peak_vram / 1024**3
             row_log = {"step": step, "train_loss": float(loss.detach()),
@@ -244,22 +265,24 @@ def main() -> None:
                      "config": {**vars(args), "output": str(args.output)},
                      "dataset": "FLEURS CC BY 4.0 train/dev only", "sample_rate_hz": RATE}
             torch.save(state, latest)
-            if validation["selection_score"] < best_score:
+            if (validation["checkpoint_eligible"] and
+                    validation["selection_score"] < best_score):
                 best_score = validation["selection_score"]
                 torch.save(state, best_path)
-            print(json.dumps({"event": "validation", **row_log, "best_score": best_score}), flush=True)
+            print(json.dumps({"event": "validation", **row_log, "best_score": best_score,
+                              "checkpoint_eligible": validation["checkpoint_eligible"]}), flush=True)
             if peak_gib > args.max_vram_gib:
                 raise RuntimeError(f"Peak allocated VRAM {peak_gib:.3f} GiB exceeds --max-vram-gib={args.max_vram_gib}")
     card = {
         "name": "VoxRefine multilingual 16 kHz student (research checkpoint)",
         "architecture": f"Complex STFT residual U-Net, width={args.width}",
         "parameters": parameter_count(model), "sample_rate_hz": RATE, "languages": sorted(train_groups),
-        "training_data": "FLEURS official train split only; dev is validation; test remains unused",
+        "training_data": "FLEURS official train split only; dev is validation; test remains unused. The provided TSV row IDs are not treated as verified speaker IDs.",
         "data_license": manifest.get("license"), "data_license_url": manifest.get("license_url"),
         "citation": manifest.get("citation"), "dataset_revision": manifest.get("revision"),
         "training_procedure": "Synthetic CC0 noise, synthetic room responses, moderate low-band capture and clipping; clean identity batches included.",
         "limitations": ["16 kHz output cannot restore true content above 8 kHz.",
-                        "FLEURS is read speech and does not represent all conversational accents/noise/rooms.",
+                        "FLEURS is read speech and does not represent all conversational accents/noise/rooms; the TSV metadata used here does not provide verified speaker-disjoint IDs.",
                         "A validation score is not a perceptual or Adobe-equivalence claim."],
         "checkpoint_selection_score": best_score,
     }
