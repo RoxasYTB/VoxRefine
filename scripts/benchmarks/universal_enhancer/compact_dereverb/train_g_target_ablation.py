@@ -359,11 +359,35 @@ def train(args) -> list[str]:
     for row in rows:
         for field, hash_field in (("x", "x_sha256"), ("c", "clean_target_sha256"),
                 ("a", "cap_target_sha256"), ("hybrid", "hybrid_target_sha256"),
-                ("tail_ref", "tail_ref_sha256")):
+                ("tail_ref", "tail_ref_sha256"), ("mask", "mask_sha256")):
             if sha(args.data_dir / row[field]) != row[hash_field]:
                 raise RuntimeError(f"G array hash mismatch at row {row['index']}:{field}")
         if row["tail_ref_sha256"] != row["cap_target_sha256"]:
             raise RuntimeError(f"tail reference is not a_q at row {row['index']}")
+        clean = np.load(args.data_dir / row["c"], allow_pickle=False)
+        cap_target = np.load(args.data_dir / row["a"], allow_pickle=False)
+        hybrid = np.load(args.data_dir / row["hybrid"], allow_pickle=False)
+        mask = np.load(args.data_dir / row["mask"], allow_pickle=False)
+        reconstructed = mask * clean + (1.0 - mask) * cap_target
+        if mask.shape != clean.shape or np.max(np.abs(reconstructed - hybrid)) > 1e-7:
+            raise RuntimeError(f"G-hybrid target does not match its frozen mask at row {row['index']}")
+        frames = np.lib.stride_tricks.sliding_window_view(clean, 320)[::160]
+        frame_rms = np.sqrt(np.mean(frames.astype(np.float64) ** 2, axis=1) + 1e-24)
+        peak = max(float(frame_rms.max()), 1e-12)
+        active = frame_rms > .02 * peak
+        weak = active & (frame_rms < .35 * peak)
+        previous = np.r_[0.0, frame_rms[:-1]]
+        onset = active & (frame_rms > 1.5 * previous)
+        protected = weak | onset
+        dilated = protected.copy()
+        for shift in (1, 2):
+            dilated[shift:] |= protected[:-shift]
+            dilated[:-shift] |= protected[shift:]
+        for frame_i in np.flatnonzero(dilated):
+            start = frame_i * 160
+            end = min(start + 320, len(mask))
+            if np.any(mask[start:end] < 1.0 - 1e-7):
+                raise RuntimeError(f"hybrid mask attenuates weak/onset frame at row {row['index']}")
     if args.steps != 3000:
         raise RuntimeError("G protocol is fixed at exactly 3,000 optimizer updates per fit")
     torch.manual_seed(args.seed)
