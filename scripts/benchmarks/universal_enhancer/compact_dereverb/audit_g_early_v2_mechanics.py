@@ -316,9 +316,11 @@ def audit(args) -> dict:
     derivative = initial_gain_diagnostics()
     autograd = gain_autograd_checks(device)
     finite_gradient = all(math.isfinite(value) for row in gradients for key, value in row.items()
-                          if key.startswith("grad_") or key == "clip_factor_at_3")
-    nonzero_groups = all(row["grad_early_norm_mask_head"] > 0 and
-                         row["grad_early_norm_trunk"] > 0 for row in gradients)
+                          if key.startswith("loss_") or key.startswith("grad_") or
+                          key == "clip_factor_at_3")
+    nonzero_groups = all(row[f"grad_{loss}_norm_{group}"] > 0
+        for row in gradients for loss in ("base", "early")
+        for group in ("mask_head", "trunk", "all"))
     tail_gate = all(value >= 2.5 for value in tail["w1_improvement_db"])
     full_gate = (full["median_w1_improvement_db"] >= 0.5 and
                  all(value >= -0.25 for value in full["w1_improvement_db"]))
