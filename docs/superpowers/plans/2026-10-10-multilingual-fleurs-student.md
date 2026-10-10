@@ -84,4 +84,6 @@
 
 ## Résultat intermédiaire du 10 octobre 2026
 
-Le pipeline d’acquisition est lancé et reprend via `--resume`. Les premières 11 locales train/dev totalisent 27 005 clips / 91,92 h train et 3 941 clips / 12,70 h dev. Ces données restent dans des chemins ignorés par Git. Le pilote de 1 000 pas a dégradé la validation « clean » (wave L1 ≈0,103) et n’a que faiblement réduit l’erreur de réverbération synthétique ; aucun poids n’est retenu comme candidat de publication. Le problème doit être corrigé avant d’augmenter le nombre de pas.
+Le corpus complet est prêt localement : 102 locales, 265 285 clips train (963,28 h) et 34 452 clips dev (119,07 h), 16 kHz mono. La licence déclarée est CC BY 4.0 ; le test officiel n’a pas été téléchargé. Ces données restent dans des chemins ignorés par Git.
+
+Le smoke-test CUDA atteint 0,11 Gio de VRAM allouée. Un pilote de 1 000 pas sur 11 langues a dégradé le clean (wave L1 ≈0,103) et peu amélioré la réverbération synthétique. Après stabilisation de la validation, un pilote sur 102 langues a été arrêté à 750/2 000 pas : le wave L1 clean est monté de ~0 à 0,021 (250), 0,050 (500), puis 0,083 (750), pendant que les métriques bruit/room ne s’amélioraient que modestement. Aucun de ces checkpoints n’est retenu comme candidat de publication. Le prochain essai doit imposer un résidu borné/une identité plus forte et employer de vraies RIR mesurées avant d’augmenter le nombre de pas.
