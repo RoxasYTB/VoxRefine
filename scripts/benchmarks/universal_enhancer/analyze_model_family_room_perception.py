@@ -61,6 +61,61 @@ def frame_rms(x: np.ndarray) -> np.ndarray:
     ])
 
 
+def voiced_frame_mask(x16: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Use input-only periodicity and level to choose common voiced frames."""
+    frame = 640  # 40 ms at 16 kHz
+    hop = 160    # 10 ms
+    starts = np.arange(max(0, (len(x16) - frame) // hop + 1)) * hop
+    threshold = 0.035 * float(np.max(np.abs(x16)))
+    window = np.hanning(frame)
+    voiced = []
+    for start in starts:
+        chunk = np.asarray(x16[start:start + frame], dtype=np.float64)
+        chunk -= chunk.mean()
+        rms = float(np.sqrt(np.mean(chunk * chunk)))
+        corr_input = chunk * window
+        corr = np.correlate(corr_input, corr_input, mode="full")[frame - 1:]
+        corr /= max(float(corr[0]), 1e-12)
+        # Fundamental range 70–300 Hz, with a conservative periodicity floor.
+        periodicity = float(np.max(corr[53:229])) if len(corr) > 229 else 0.0
+        voiced.append(rms > threshold and periodicity >= 0.35)
+    return starts, np.asarray(voiced, dtype=bool)
+
+
+def spectral_ripple_db(x16: np.ndarray, starts: np.ndarray,
+                       voiced: np.ndarray) -> dict[str, float | int | None]:
+    """Describe residual log-spectrum ripple after a broad log-frequency envelope.
+
+    This is only a coloration proxy: speaker formants, phonetic mix, and a
+    processor's spectrum can all change it. It is deliberately not called a
+    dereverberation score.
+    """
+    selected = starts[voiced]
+    if len(selected) < 5:
+        return {"n_voiced_frames": int(len(selected)), "ripple_sd_db": None,
+                "ripple_abs_p90_db": None}
+    frame = 640
+    window = np.hanning(frame)
+    spectra = np.asarray([
+        np.abs(np.fft.rfft(np.asarray(x16[s:s + frame], dtype=np.float64) * window,
+                           n=2048)) ** 2
+        for s in selected
+    ])
+    mean_power = np.mean(spectra, axis=0) + 1e-15
+    frequencies = np.fft.rfftfreq(2048, 1 / 16_000)
+    log_frequency = np.linspace(np.log(250), np.log(7_000), 1000)
+    log_power_db = np.interp(log_frequency, np.log(frequencies[1:]),
+                             10 * np.log10(mean_power[1:]))
+    sigma = 0.12 * np.log(2) / (log_frequency[1] - log_frequency[0])
+    envelope = ndimage.gaussian_filter1d(log_power_db, sigma=sigma)
+    ripple = log_power_db - envelope
+    return {"n_voiced_frames": int(len(selected)),
+            "ripple_sd_db": float(np.std(ripple)),
+            "ripple_abs_p90_db": float(np.percentile(np.abs(ripple), 90)),
+            "frequency_range_hz": [250, 7_000],
+            "smooth_envelope_bandwidth_octaves": 0.12}
+
+
 def events_from_reference(x: np.ndarray) -> list[tuple[int, int]]:
     env = frame_rms(x)
     active = env > 0.035 * np.max(np.abs(x))
@@ -88,6 +143,8 @@ def main() -> None:
     active = activity_env > 0.035 * np.max(np.abs(activity_ref))
     ref_speech = float(np.sqrt(np.mean(ref_env[active] ** 2)))
     events = events_from_reference(activity_ref)
+    activity16 = resample_poly(activity_ref, 1, 3)
+    voiced_starts, voiced_mask = voiced_frame_mask(activity16)
 
     # One fixed gain per output: common Cap60 activity mask, never a tail gain.
     matched: dict[str, np.ndarray] = {}
@@ -125,6 +182,12 @@ def main() -> None:
                               "srmr_normalized": float(norm_score),
                               "sample_rate_hz": 16_000,
                               "duration_s": len(x16) / 16_000})
+
+    ripple_rows = []
+    for name, x in matched.items():
+        x16 = resample_poly(x, 1, 3)
+        ripple_rows.append({"candidate": name,
+                            **spectral_ripple_db(x16, voiced_starts, voiced_mask)})
 
     rows = []
     for event_id, (_, end) in enumerate(events, 1):
@@ -194,6 +257,16 @@ def main() -> None:
                 "Scores are reported only when optional local SRMRpy is available.",
             ],
         },
+        "voiced_spectral_ripple": {
+            "definition": "SD and absolute p90 of log-power residual from a 0.12-octave Gaussian-smoothed log-frequency envelope, averaged across input-selected periodic frames",
+            "mask": "40 ms frames, 10 ms hop, raw-input RMS > 3.5% of raw peak and normalized autocorrelation peak >= 0.35 for 70-300 Hz periodicity; candidates share exact frame indices",
+            "rows": ripple_rows,
+            "limitations": [
+                "Proxy for spectral coloration, not an isolated early-reflection measurement.",
+                "Changes in phonetic balance, formants, bandwidth, and model spectrum also change the index.",
+                "Interpret only beside listening and known dry/reverberant controls; not as a product score.",
+            ],
+        },
         "offsets": [{"event": i, "start_s": round(s / RATE, 4), "end_s": round(e / RATE, 4)} for i, (s, e) in enumerate(events, 1)],
         "limitations": [
             "Residual contains room response, noise, unvoiced speech, and model artifacts; there is no dry stem.",
@@ -238,10 +311,26 @@ def main() -> None:
     fig.suptitle("Énergie résiduelle multi-bandes — une voix, une pièce, alignement commun\nMesure descriptive, pas un score de déréverbération\n300–600 ms : aucun offset complet et non recouvert (n=0, censuré)")
     fig.savefig(OUT / "multi_offset_room_residual.png", dpi=170)
     plt.close(fig)
-    print(json.dumps({"events": metadata["offsets"], "srmr": srmr_rows, "valid_counts": {
+    ripple_sd = {r["candidate"]: r["ripple_sd_db"] for r in ripple_rows}
+    ripple_order = list(FILES)
+    ripple_fig, ripple_ax = plt.subplots(figsize=(10, 4.8), constrained_layout=True)
+    ripple_values = [ripple_sd[name] for name in ripple_order]
+    bars = ripple_ax.bar(ripple_order, ripple_values,
+                         color=colors[:len(ripple_order)])
+    ripple_ax.bar_label(bars, fmt="%.2f", padding=3, fontsize=9)
+    ripple_ax.set_ylabel("Écart-type du résidu spectral (dB)")
+    ripple_ax.set_title("Ripple spectrale sur 230 trames voisées communes\n"
+                        "Indice de coloration; le lissage peut aussi le réduire")
+    ripple_ax.tick_params(axis="x", rotation=24)
+    ripple_ax.grid(axis="y", alpha=.25)
+    ripple_fig.savefig(OUT / "voiced_spectral_ripple.png", dpi=170)
+    plt.close(ripple_fig)
+    print(json.dumps({"events": metadata["offsets"], "srmr": srmr_rows,
+                      "voiced_spectral_ripple": ripple_rows,
+                      "valid_counts": {
         f"{a}-{b}ms": sum(1 for r in rows if r["candidate"] == "Cap60" and r["window_ms"] == f"{a}-{b}" and r["band"] == "broadband" and r["valid"])
         for a, b in WINDOWS_MS
-    }, "files": ["multi_offset_room_residual.json", "multi_offset_room_residual.csv", "multi_offset_room_residual.png"]}, indent=2))
+    }, "files": ["multi_offset_room_residual.json", "multi_offset_room_residual.csv", "multi_offset_room_residual.png", "voiced_spectral_ripple.png"]}, indent=2))
 
 
 if __name__ == "__main__":

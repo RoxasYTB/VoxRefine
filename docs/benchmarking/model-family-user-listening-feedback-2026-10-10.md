@@ -50,6 +50,33 @@ Sur le clip utilisateur, calculé après l'unique mise à niveau constante déj�
 
 Le score confirme qu'il peut répondre à une différence de réverbération connue, mais il ne reproduit pas le jugement d'écoute sur ce clip : le SRMR original favorise StuPASE malgré sa compression audible, tandis que la version normalisée varie d'environ 0,8 point seulement et place Adobe au-dessus de DPDFNet2 de 0,06. Ce n'est pas un classement perceptif fiable, ni une mesure directe de RT60 ou de profondeur de pièce. Bruit, réduction de bruit, compression, bande passante et artefacts changent aussi le spectre de modulation. Les versions sont donc conservées comme axes de diagnostic séparés; aucun réglage de traitement n'est choisi en les maximisant.
 
+## Ripple spectrale sur la voix voisée
+
+Pour sonder la coloration pendant la voix (plutôt que dans les pauses), j'ai utilisé le même masque de trames voisées dérivé uniquement de l'entrée brute : 40 ms, pas de 10 ms, RMS supérieur à 3,5 % du pic, autocorrélation normalisée d'au moins 0,35 sur la plage 70–300 Hz. Sur chaque rendu, la puissance spectrale moyenne de ces mêmes 230 trames est convertie en log-fréquence, une enveloppe large de 0,12 octave est lissée, puis l'écart-type du résidu est mesuré entre 250 Hz et 7 kHz.
+
+Avant lecture de la comparaison utilisateur, ce descripteur a été contrôlé avec le même calcul sur deux paires alignées du corpus local :
+
+| Signal de référence connu (T005_CH2_00450) | Ripple SD sec | Ripple SD réverbéré | P90 absolu sec → réverbéré |
+|---|---:|---:|---:|
+| room12 | 2,600 dB | 2,811 dB | 4,318 → 4,752 dB |
+| room8 | 2,600 dB | 2,922 dB | 4,318 → 4,927 dB |
+
+Les deux paires augmentent dans le sens attendu, mais cela ne valide pas l'indice comme score universel : il mesure aussi les formants, le contenu phonétique, lissage fréquentiel et coloration des modèles. Sur les rendus utilisateur :
+
+| Rendu | Ripple SD | P90 absolu |
+|---|---:|---:|
+| Cap60 | 2,861 dB | 4,733 dB |
+| Adobe V2 | 2,587 dB | 4,288 dB |
+| StuPASE | 2,248 dB | 3,816 dB |
+| ROSE brut | 2,121 dB | 3,482 dB |
+| ROSE après Cap60 | 2,256 dB | 3,723 dB |
+| WPE | 2,839 dB | 4,657 dB |
+| DPDFNet2 | 2,863 dB | 4,715 dB |
+
+Lecture prudente : StuPASE et ROSE lissent davantage la structure spectrale que l'audio Adobe de référence, ce qui colle au retour « compressé/étouffé » pour StuPASE et au fait que ROSE reste perçu comme réverbérant malgré son faible indice. WPE et DPDFNet2 gardent une ripple semblable à Cap60, mais le DPDFNet2 est justement perçu comme plus « pièce ». L'indice aide donc à séparer un axe de lissage/coloration de l'axe de réverbération perçue; il ne donne pas le traitement à appliquer.
+
+Le graphique correspondant est conservé à côté du pack local : `results/user-recording-test-2026-10-09/model-family-comparison-02/voiced_spectral_ripple.png`.
+
 La contradiction la plus instructive est conservée : DPDFNet2 est environ 32 dB plus bas que Cap60 sur l'unique offset mesurable entre 150 et 300 ms, mais il est perçu comme plus réverbérant. **La mesure ne classe donc pas la sensation entendue.** Une réduction d'énergie de pause ne prouve pas une suppression des réflexions précoces ou du filtrage en peigne pendant les phonèmes; un timbre artificiel peut même être perçu comme une pièce plus présente. Ces explications restent des hypothèses à départager, pas une attribution causale sur ce clip mono.
 
 Les bandes au-dessus de 8 kHz sont marquées comme non prises en charge pour StuPASE et ROSE-CD, exécutés à 16 kHz puis rééchantillonnés pour le pack. Le rééchantillonnage n'ajoute pas de contenu au-dessus de leur bande native; leurs niveaux HF ne sont donc pas rapportés comme des mesures comparables.
@@ -64,7 +91,7 @@ Les bandes au-dessus de 8 kHz sont marquées comme non prises en charge pour Stu
 4. Ne faire une inférence avec un nouveau moteur qu'après avoir vérifié poids, provenance et licence. VoiceFixer est déjà cloné localement, mais son rapport antérieur note que le checkpoint téléchargé n'a pas satisfait le checksum annoncé; il ne doit pas être rechargé. StoRM est cloné, mais aucun checkpoint n'est présent localement et ses poids distribués séparément n'ont pas été audités. Aucun des deux n'est actuellement un candidat exécutable/promouvable.
 5. Pour `test.wav`, sans stem sec Adobe ni réponse impulsionnelle, les métriques restent des indicateurs partiels. Le fichier n'a pas été téléversé ni partagé.
 
-GPT Web a recommandé d'abandonner le RMS terminal comme score principal et de faire évoluer le protocole vers fenêtres multi-offsets, bandes fréquentielles, modulation temporelle (p. ex. SRMR) et écoute anonymisée. Cette passe ajoute SRMR, validé en direction sur deux paires locales à référence sèche, mais ne calcule pas d'indice de filtrage en peigne. La réverbération présente dans l'entrée brute rend plusieurs pauses non mesurables selon la règle conservatrice; il reste seulement 1/1/0 offsets complets selon la fenêtre. Le nombre d'offsets mesurables est trop faible pour une conclusion statistique.
+GPT Web a recommandé d'abandonner le RMS terminal comme score principal et d'ajouter SRMR, coloration spectrale et mesures de préservation de la voix. Cette passe ajoute SRMR et un indice de ripple spectrale, tous deux validés en direction sur deux paires locales sèches/réverbérées; la ripple demeure un proxy confondu par le timbre et le modèle. La réverbération présente dans l'entrée brute rend plusieurs pauses non mesurables selon la règle conservatrice; il reste seulement 1/1/0 offsets complets selon la fenêtre. Le nombre d'offsets mesurables est trop faible pour une conclusion statistique.
 
 Le script reproductible est [`analyze_model_family_room_perception.py`](../../scripts/benchmarks/universal_enhancer/analyze_model_family_room_perception.py). Les CSV/JSON/PNG et WAV liés à l'enregistrement restent en local sous `results/` et ne sont pas ajoutés au dépôt.
 
