@@ -1,0 +1,5 @@
+deepfilter/
+!internal/deepfilter
+test-*
+test.*
+.idea/

@@ -1,0 +1,33 @@
+name: build
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest   # Apple Silicon
+            name: kyone-macos-arm64
+          - os: macos-13       # Intel
+            name: kyone-macos-amd64
+          - os: windows-latest
+            name: kyone-windows-amd64.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # The live mode needs cgo (miniaudio): Xcode tools on macOS, the MinGW gcc
+      # that ships with the Windows runner. The tests need no audio hardware.
+      - run: go vet ./...
+      - run: go test ./...
+      - run: go build -o ${{ matrix.name }} ./cmd/kyone
+        env:
+          CGO_ENABLED: "1"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ matrix.name }}
